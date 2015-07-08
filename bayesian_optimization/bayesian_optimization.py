@@ -232,7 +232,7 @@ def optimize(objective_function, boundaries, optimizer, maxf, x0=None,
                             "You may install it using "
                             "'sudo apt-get install python-nlopt'")
 
-        opt = nlopt.opt(nlopt.GN_DIRECT_L, boundaries.shape[0])
+        opt = nlopt.opt(nlopt.GN_DIRECT_L_RAND, boundaries.shape[0])
         opt.set_lower_bounds(boundaries[:, 0])
         opt.set_upper_bounds(boundaries[:, 1])
         opt.set_maxeval(maxf)

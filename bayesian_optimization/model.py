@@ -187,7 +187,7 @@ def model_free_policy_training(policy, contexts, parameters, returns=None,
     features = np.array([policy.transform_context(c) for c in contexts])
     if returns is not None:
         returns = np.asarray(returns)
-        from optimizer.python.utils.reps import solve_dual_contextual_reps
+        from bolero.optimizer.creps import solve_dual_contextual_reps
         d, _ = solve_dual_contextual_reps(features, returns, epsilon=epsilon,
                                           min_eta=min_eta)
     else:
@@ -290,12 +290,11 @@ def model_based_policy_training(policy, contexts, parameters, returns,
 
     # Refine policy determined in model-free way by performing L-BFGS on
     # the model.
-    from optimizer.python.cmaes import fmin as fmin_cmaes
+    from bolero.optimizer import fmin as fmin_cmaes
     policy.W /= scale_factor
-    x_lbfgs, _ = \
-        fmin_cmaes(average_return, x0=policy.W.flatten(), maxfun=maxfun,
-                   eval_initial_x=True, variance=variance, maximize=True,
-                   *args, **kwargs)
+    x_lbfgs, _ = fmin_cmaes(
+        average_return, x0=policy.W.flatten(), maxfun=maxfun,
+        eval_initial_x=True, variance=variance, maximize=True, *args, **kwargs)
 
     # Set weights of linear policy
     policy.W = x_lbfgs.reshape(policy.W.shape)

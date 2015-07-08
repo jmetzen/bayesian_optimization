@@ -168,7 +168,7 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
 
     def best_policy(self, maxfun=50000, variance=0.01,
                     training=["model-free", "model-based"]):
-        """ Returns the best (greedy) policy learned so far.
+        """Returns the best (greedy) policy learned so far.
 
         Parameters
         ----------
@@ -284,6 +284,17 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
         # Clip to hard boundaries
         return np.maximum(self.boundaries[:, 0],
                           np.minimum(opt, self.boundaries[:, 1]))
+
+    def get_desired_context(self):
+        """Chooses desired context for next evaluation.
+
+        Returns
+        -------
+        context : ndarray-like, default=None
+            The context in which the next rollout shall be performed. If None,
+            the environment may select the next context without any preferences.
+        """
+        return None
 
     def __getstate__(self):
         """ Return a pickable state for this object """

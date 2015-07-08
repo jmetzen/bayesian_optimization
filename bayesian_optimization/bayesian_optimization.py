@@ -170,9 +170,8 @@ class BayesianOptimizer(Optimizer):
 
         # Create acquisition function
         kappa = self.kappa if explore else 0.0
-        acquisition_function = \
-            ACQUISITION_FUNCTIONS[self.acquisition_function](self.model.gp,
-                                                             kappa)
+        acquisition_function = ACQUISITION_FUNCTIONS[self.acquisition_function](
+            self.model.gp, kappa)
 
         def target_function(x, compute_gradient=False):
             # Check boundaries
@@ -194,8 +193,8 @@ class BayesianOptimizer(Optimizer):
             opt = start_point
 
         # Check if we have tried a very similar parameter vector before
-        if cdist(self.parameters, [opt]).min() / 1e-8 < \
-           np.linalg.norm(self.boundaries[:, 1] - self.boundaries[:, 0]):
+        if (cdist(self.parameters, [opt]).min() / 1e-8 <
+                np.linalg.norm(self.boundaries[:, 1] - self.boundaries[:, 0])):
             # Choose a random parameter vector
             opt = self.random.uniform(size=self.dimension) \
                 * (self.boundaries[:, 1] - self.boundaries[:, 0]) \
@@ -206,7 +205,7 @@ class BayesianOptimizer(Optimizer):
                           np.minimum(opt, self.boundaries[:, 1]))
 
     def __getstate__(self):
-        """ Return a pickable state for this object """
+        """Return a pickable state for this object """
         odict = self.__dict__.copy()  # copy the dict since we change it
         if "value_transform" in odict:
             odict.pop("value_transform")
@@ -215,7 +214,7 @@ class BayesianOptimizer(Optimizer):
 
 def optimize(objective_function, boundaries, optimizer, maxf, x0=None,
              approx_grad=True, random=np.random, *args, **kwargs):
-    """ Minimize objective_function within given boundaries.
+    """Minimize objective_function within given boundaries.
 
     This function optimizes an objective function in a search space with the
     given boundaries. The optimizer may use up to maxf evaluations of the
@@ -289,8 +288,6 @@ def optimize(objective_function, boundaries, optimizer, maxf, x0=None,
         res = fmin_l_bfgs_b(proxy_function, x0,
                             approx_grad=approx_grad,
                             bounds=boundaries, disp=0)
-#            assert(res[2]['warnflag'] == 0), \
-#                "fmin_l_bfgs_b terminated with status %s" % res[2]
         return res[0]
     else:
         raise Exception("Unknown optimizer %s" % optimizer)

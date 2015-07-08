@@ -274,7 +274,7 @@ def model_based_policy_training(policy, contexts, parameters, returns,
     model.train(inputs, returns)
 
     def average_return(policy_params):
-        """ Return predicted return of policy for given policy parameters. """
+        """Return predicted return of policy for given policy parameters."""
         # Instantiate policy
         policy.W = np.array(policy_params.reshape(policy.W.shape))
         policy.W *= scale_factor

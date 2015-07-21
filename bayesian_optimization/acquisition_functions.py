@@ -40,8 +40,9 @@ class ProbabilityOfImprovement(object):
             The probability that query point x yields a better return than
             the best seen so far (i.e., baseline_value)
         """
-        # Let GP model predict mean and variance
-        mu_x, sigma_x = self.model.predict(x, return_std=True)
+        # Determine model's predictive distribution (mean and
+        # standard-deviation)
+        mu_x, sigma_x = self.model.predictive_distribution(x)
 
         gamma_x = (mu_x - (baseline_value - self.kappa)) / sigma_x
         pi = norm.cdf(gamma_x)
@@ -83,8 +84,9 @@ class ExpectedImprovement(object):
             The expected improvement at query point x over the current best
             (i.e, baseline_value)
         """
-        # Let GP model predict mean and variance
-        mu_x, sigma_x = self.model.predict(x, return_std=True)
+        # Determine model's predictive distribution (mean and
+        # standard-deviation)
+        mu_x, sigma_x = self.model.predictive_distribution(x)
 
         gamma_x = (mu_x - (baseline_value - self.kappa)) / sigma_x
         # Compute EI based on some temporary variables that can be reused in
@@ -134,8 +136,9 @@ class UpperConfidenceBound(object):
         gradient: array-like, optional (if compute_gradient is True)
             The gradient of the upper confidence bound at position x.
         """
-        # Let GP model predict mean and variance
-        mu_x, sigma_x = self.model.predict(x, return_std=True)
+        # Determine model's predictive distribution (mean and
+        # standard-deviation)
+        mu_x, sigma_x = self.model.predictive_distribution(x)
 
         ucb = (mu_x - baseline_value) + self.kappa * sigma_x
 

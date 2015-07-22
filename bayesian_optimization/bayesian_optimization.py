@@ -5,12 +5,15 @@ from scipy.optimize import fmin_l_bfgs_b
 
 class BayesianOptimizer(object):
 
-    def __init__(self, model, acquisition_function, optimizer):
+    def __init__(self, model, acquisition_function, optimizer, maxf=1000,
+                 initial_random_samples=5, seed=0):
         self.model = model
         self.acquisition_function = acquisition_function
         self.optimizer = optimizer
+        self.maxf = maxf
+        self.initial_random_samples = initial_random_samples
 
-        self.random = np.random.RandomState(0)  # XXX
+        self.rng = np.random.RandomState(seed)
 
         self.X_ = []
         self.y_ = []
@@ -18,8 +21,8 @@ class BayesianOptimizer(object):
     def select_query_point(self, boundaries):
         boundaries = np.asarray(boundaries)
 
-        if len(self.X_) < 5:
-            X_query = self.random.uniform(size=boundaries.shape[0]) \
+        if len(self.X_) < self.initial_random_samples:
+            X_query = self.rng.uniform(size=boundaries.shape[0]) \
                 * (boundaries[:, 1] - boundaries[:, 0]) + boundaries[:, 0]
         else:
             def objective_function(x):
@@ -32,7 +35,7 @@ class BayesianOptimizer(object):
 
             X_query = optimize(objective_function, boundaries=boundaries,
                                optimizer=self.optimizer,
-                               maxf=1000, random=self.random)
+                               maxf=self.maxf, random=self.rng)
 
         # Clip to hard boundaries
         return np.clip(X_query, boundaries[:, 0], boundaries[:, 1])

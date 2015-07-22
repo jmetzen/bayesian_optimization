@@ -125,6 +125,7 @@ def fmin_cma(objective_function, x0, xL, xU, sigma0=0.01, maxfun=1000):
     xU = np.asarray(xU)
     # Scale parameters such that search space is a unit-hypercube
     x0 = (x0 - xL) / (xU - xL)
+    x0[~np.isfinite(x0)] = 0  # Deal with situations where xU == xL
     bounds = np.array([np.zeros_like(x0), np.ones_like(x0)]).T
 
     # Rescale in objective function

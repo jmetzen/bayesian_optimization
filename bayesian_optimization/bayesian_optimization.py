@@ -3,6 +3,7 @@ import numpy as np
 
 from .utils.optimization import global_optimization
 
+
 class BayesianOptimizer(object):
 
     def __init__(self, model, acquisition_function, optimizer, maxf=1000,

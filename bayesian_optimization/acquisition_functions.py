@@ -66,8 +66,7 @@ class ExpectedImprovement(object):
         self.model = model
         self.kappa = 0  # TODO: kappa
 
-    def __call__(self, x, baseline_value, compute_gradient=False, *args,
-                 **kwargs):
+    def __call__(self, x, baseline_value, *args, **kwargs):
         """Returns the expected improvement at query point x.
 
         Parameters
@@ -115,8 +114,7 @@ class UpperConfidenceBound(object):
         self.model = model
         self.kappa = kappa
 
-    def __call__(self, x, baseline_value=0, compute_gradient=False,
-                 *args, **kwargs):
+    def __call__(self, x, baseline_value=0, *args, **kwargs):
         """ Returns the upper confidence bound at query point x.
 
         Parameters

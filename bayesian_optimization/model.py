@@ -1,11 +1,9 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 
 import numpy as np
-import copy
-import logging
-from functools import partial
+
 from sklearn.gaussian_process import GaussianProcessRegressor
-from bolero.utils.validation import check_random_state
+from sklearn.utils.validation import check_random_state
 
 
 class GaussianProcessModel(object):
@@ -103,16 +101,18 @@ class GaussianProcessModel(object):
 
     def fit(self, X, y):
         """ Fits a new Gaussian process model on (X, y) data. """
+        X = np.asarray(X)
+        y = np.asarray(y)
         # Only train GP model if the training set has actually changed
-        if inputs.shape[0] <= self.last_training_size:
+        if X.shape[0] <= self.last_training_size:
             return
 
         # Create and fit Gaussian Process model
-        self.gp = self._create_gp(training_size=inputs.shape[0])
+        self.gp = self._create_gp(training_size=X.shape[0])
         self.gp.fit(X, y)
 
         self.kernel_ = self.gp.kernel_
-        self.last_training_size = inputs.shape[0]
+        self.last_training_size = X.shape[0]
 
     def predictive_distribution(self, X):
         return self.gp.predict(X, return_std=True)

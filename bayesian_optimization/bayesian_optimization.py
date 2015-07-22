@@ -5,38 +5,37 @@ from scipy.optimize import fmin_l_bfgs_b
 
 class BayesianOptimizer(object):
 
-    def __init__(self, model, acquisition_function, optimizer, boundaries):
+    def __init__(self, model, acquisition_function, optimizer):
         self.model = model
         self.acquisition_function = acquisition_function
         self.optimizer = optimizer
-        self.boundaries = np.asarray(boundaries)
 
         self.random = np.random.RandomState(0)  # XXX
 
         self.X_ = []
         self.y_ = []
 
-    def select_query_point(self):
+    def select_query_point(self, boundaries):
+        boundaries = np.asarray(boundaries)
+
         if len(self.X_) < 5:
-            X_query = (self.random.uniform(size=self.boundaries.shape[0]) *
-                   (self.boundaries[:, 1] - self.boundaries[:, 0]) +
-                   self.boundaries[:, 0])
+            X_query = self.random.uniform(size=boundaries.shape[0]) \
+                * (boundaries[:, 1] - boundaries[:, 0]) + boundaries[:, 0]
         else:
             def objective_function(x):
                 # Check boundaries
-                if not np.all(np.logical_and(x >= self.boundaries[:, 0],
-                                             x <= self.boundaries[:, 1])):
+                if not np.all(np.logical_and(x >= boundaries[:, 0],
+                                             x <= boundaries[:, 1])):
                     return -np.inf
 
                 return self.acquisition_function(x, baseline_value=max(self.y_))
 
-            X_query = optimize(objective_function, boundaries=self.boundaries,
+            X_query = optimize(objective_function, boundaries=boundaries,
                                optimizer=self.optimizer,
                                maxf=1000, random=self.random)
 
         # Clip to hard boundaries
-        return np.maximum(self.boundaries[:, 0],
-                          np.minimum(X_query, self.boundaries[:, 1]))
+        return np.clip(X_query, boundaries[:, 0], boundaries[:, 1])
 
     def update(self, X, y):
         self.X_.append(X)

@@ -14,14 +14,13 @@ acquisition_function = UpperConfidenceBound(model, kappa=kappa)
 
 bayes_opt = BayesianOptimizer(model=model,
                               acquisition_function=acquisition_function,
-                              optimizer="direct",
-                              boundaries=np.array([[-1, 1]]))
+                              optimizer="direct")
 
 def f(X):
     return -np.linalg.norm(X)
 
 for i in range(10):
-    X_query = bayes_opt.select_query_point()
+    X_query = bayes_opt.select_query_point(boundaries=np.array([[-1, 1]]))
     y_query = f(X_query)
     bayes_opt.update(X_query, y_query)
 

@@ -5,8 +5,8 @@ from scipy.spatial.distance import cdist
 
 from bolero.optimizer import Optimizer
 from bolero.utils.validation import check_random_state, check_feedback
-from .model import GaussianProcessModel
-from .acquisition_functions import ACQUISITION_FUNCTIONS
+
+from ..model import GaussianProcessModel
 
 
 class BayesianOptimizer(Optimizer):

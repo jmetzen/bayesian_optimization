@@ -4,11 +4,11 @@ import numpy as np
 from bolero.optimizer import ContextualOptimizer
 from bolero.representation.ul_policies import BoundedScalingPolicy
 from bolero.utils.validation import check_feedback, check_random_state
-from .bayesian_optimization import optimize
-from .acquisition_functions import (CONTEXTUAL_ACQUISITION_FUNCTIONS,
-                                    ZeroBaseline, MaxLCBBaseline)
-from .model import GaussianProcessModel
-from .model import model_free_policy_training, model_based_policy_training
+from ..utils.optimization import global_optimization
+#from ..acquisition_functions import (CONTEXTUAL_ACQUISITION_FUNCTIONS,
+#                                    ZeroBaseline, MaxLCBBaseline)
+from ..model import GaussianProcessModel
+#from .model import model_free_policy_training, model_based_policy_training
 
 
 class ContextualBayesianOptimizer(ContextualOptimizer):

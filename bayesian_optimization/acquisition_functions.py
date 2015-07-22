@@ -20,9 +20,9 @@ class ProbabilityOfImprovement(object):
     """
     def __init__(self, model, kappa=0.0):
         self.model = model
-        self.kappa = 0  # TODO: kappa
+        self.kappa = kappa
 
-    def __call__(self, x, baseline_value, *args, **kwargs):
+    def __call__(self, x, incumbent, *args, **kwargs):
         """Returns the probability of improvement at query point x.
 
         Parameters
@@ -30,7 +30,7 @@ class ProbabilityOfImprovement(object):
         x: array-like
             The position at which the probability of improvement will be
             evaluated.
-        baseline_value: float
+        incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning.
 
@@ -38,13 +38,13 @@ class ProbabilityOfImprovement(object):
         -------
         pi: float
             The probability that query point x yields a better return than
-            the best seen so far (i.e., baseline_value)
+            the best seen so far (i.e., incumbent)
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
         mu_x, sigma_x = self.model.predictive_distribution(x)
 
-        gamma_x = (mu_x - (baseline_value - self.kappa)) / sigma_x
+        gamma_x = (mu_x - (incumbent - self.kappa)) / sigma_x
         pi = norm.cdf(gamma_x)
 
         return pi
@@ -64,16 +64,16 @@ class ExpectedImprovement(object):
     """
     def __init__(self, model, kappa=0.0):
         self.model = model
-        self.kappa = 0  # TODO: kappa
+        self.kappa = kappa
 
-    def __call__(self, x, baseline_value, *args, **kwargs):
+    def __call__(self, x, incumbent, *args, **kwargs):
         """Returns the expected improvement at query point x.
 
         Parameters
         ----------
         x: array-like
             The position at which the expected improvement will be evaluated.
-        baseline_value: float
+        incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning.
 
@@ -81,13 +81,13 @@ class ExpectedImprovement(object):
         -------
         ei: float
             The expected improvement at query point x over the current best
-            (i.e, baseline_value)
+            (i.e, incumbent)
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
         mu_x, sigma_x = self.model.predictive_distribution(x)
 
-        gamma_x = (mu_x - (baseline_value - self.kappa)) / sigma_x
+        gamma_x = (mu_x - (incumbent - self.kappa)) / sigma_x
         # Compute EI based on some temporary variables that can be reused in
         # gradient computation
         tmp_erf = erf(gamma_x / np.sqrt(2))
@@ -114,14 +114,14 @@ class UpperConfidenceBound(object):
         self.model = model
         self.kappa = kappa
 
-    def __call__(self, x, baseline_value=0, *args, **kwargs):
+    def __call__(self, x, incumbent=0, *args, **kwargs):
         """ Returns the upper confidence bound at query point x.
 
         Parameters
         ----------
         x: array-like
             The position at which the upper confidence bound will be evaluated.
-        baseline_value: float
+        incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning. Defaults to 0.
         compute_gradient: bool
@@ -138,6 +138,6 @@ class UpperConfidenceBound(object):
         # standard-deviation)
         mu_x, sigma_x = self.model.predictive_distribution(x)
 
-        ucb = (mu_x - baseline_value) + self.kappa * sigma_x
+        ucb = (mu_x - incumbent) + self.kappa * sigma_x
 
         return ucb

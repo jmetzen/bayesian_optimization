@@ -44,7 +44,7 @@ class ProbabilityOfImprovement(object):
         # standard-deviation)
         mu_x, sigma_x = self.model.predictive_distribution(x)
 
-        gamma_x = (mu_x - (incumbent - self.kappa)) / sigma_x
+        gamma_x = (mu_x - (incumbent + self.kappa)) / sigma_x
         pi = norm.cdf(gamma_x)
 
         return pi
@@ -87,7 +87,7 @@ class ExpectedImprovement(object):
         # standard-deviation)
         mu_x, sigma_x = self.model.predictive_distribution(x)
 
-        gamma_x = (mu_x - (incumbent - self.kappa)) / sigma_x
+        gamma_x = (mu_x - (incumbent + self.kappa)) / sigma_x
         # Compute EI based on some temporary variables that can be reused in
         # gradient computation
         tmp_erf = erf(gamma_x / np.sqrt(2))

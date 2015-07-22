@@ -19,7 +19,8 @@ class BayesianOptimizer(object):
         self.X_ = []
         self.y_ = []
 
-    def select_query_point(self, boundaries):
+    def select_query_point(self, boundaries,
+                           incumbent_fct=lambda y: np.max(y)):
         boundaries = np.asarray(boundaries)
 
         if len(self.X_) < self.initial_random_samples:
@@ -32,7 +33,8 @@ class BayesianOptimizer(object):
                                              x <= boundaries[:, 1])):
                     return -np.inf
 
-                return self.acquisition_function(x, baseline_value=max(self.y_))
+                incumbent = incumbent_fct(self.y_)
+                return self.acquisition_function(x, incumbent=incumbent)
 
             X_query = global_optimization(
                 objective_function, boundaries=boundaries,

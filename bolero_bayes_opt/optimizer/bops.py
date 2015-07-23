@@ -1,16 +1,16 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 
 import numpy as np
-from scipy.spatial.distance import cdist
 
 from bolero.optimizer import Optimizer
 from bolero.utils.validation import check_random_state, check_feedback
 
-from ..model import GaussianProcessModel
+from bayesian_optimization import (BayesianOptimizer, GaussianProcessModel,
+    create_acquisition_function)
 
 
-class BayesianOptimizer(Optimizer):
-    """Bayesian Optimization.
+class BOPSOptimizer(Optimizer):
+    """Bayesian Optimization for Policy Search (BO-PS).
 
     This optimizer models the landscape of the function to be optimized
     internally by a Gaussian process (GP) and evaluates always those parameters
@@ -20,12 +20,12 @@ class BayesianOptimizer(Optimizer):
 
     Bayesian optimization aims at reducing the number of evaluations of the
     actual function, which is assumed to be costly. To achieve this, a large
-    computational budget is allocated at modeling the true function and finding
+    computational budget is allocated at modelling the true function and finding
     potentially optimal positions based on this model.
 
-    .. seealso:: Brochu, Cora, de Fretas
+    .. seealso:: Brochu, Cora, de Freitas
                  "A tutorial on Bayesian optimization of expensive cost
-                  functions, with application to active user modeling and
+                  functions, with application to active user modelling and
                   hierarchical reinforcement learning"
 
     Parameters
@@ -83,7 +83,6 @@ class BayesianOptimizer(Optimizer):
                  acq_fct_kwargs={}, gp_kwargs={},
                  value_transform=lambda x: x,
                  approx_grad=True, random_state=None, **kwargs):
-        assert acquisition_function in ACQUISITION_FUNCTIONS
         assert isinstance(boundaries, list), \
             "Boundaries must be passed as a list of tuples (pairs)."
 
@@ -91,21 +90,22 @@ class BayesianOptimizer(Optimizer):
         self.value_transform = value_transform
         if isinstance(self.value_transform, basestring):
             self.value_transform = eval(self.value_transform)
-
-        self.acquisition_function = acquisition_function
         self.optimizer = optimizer
-        self.optimizer_kwargs = optimizer_kwargs
-        self.approx_grad = approx_grad
 
-        self.kappa = acq_fct_kwargs.pop('kappa', kwargs.get('kappa', 0.0))
-        self.acq_fct_kwargs = acq_fct_kwargs
+        self.rng = check_random_state(random_state)
 
-        self.gp_kwargs = gp_kwargs
-
-        self.random = check_random_state(random_state)
-
+        # Create surrogate model, acquisition function and Bayesian optimizer
         self.model = \
-            GaussianProcessModel(random_state=self.random, **self.gp_kwargs)
+            GaussianProcessModel(random_state=self.rng, **gp_kwargs)
+
+        self.acquisition_function = \
+            create_acquisition_function(acquisition_function, self.model,
+                                        **acq_fct_kwargs)
+
+        self.bayes_opt = BayesianOptimizer(
+            model=self.model, acquisition_function=self.acquisition_function,
+            optimizer=self.optimizer,
+            maxf=optimizer_kwargs.get("maxf", 100))
 
     def init(self, dimension):
         self.dimension = dimension
@@ -117,90 +117,33 @@ class BayesianOptimizer(Optimizer):
         else:
             raise Exception("Boundaries not specified for all dimensions")
 
-        self.parameters = []
-        self.returns = []
-
-        self.opt_value = -np.inf  # maximal value obtained so far
-        self.opt_params = None  # best parameters found so far
-
     def get_next_parameters(self, params, explore=True):
         """Return parameter vector that shall be evaluated next.
 
         Parameters
         ----------
-
         params : array-like
             The selected parameters will be written into this as a side-effect.
         explore : bool
             Whether exploration in parameter selection is enabled
         """
-        params_ = (self.random.uniform(size=self.dimension) *
-                   (self.boundaries[:, 1] - self.boundaries[:, 0]) +
-                   self.boundaries[:, 0])
-        # Find query point where the acquisition function becomes maximal
-        if len(self.parameters) > self.dimension:
-            params_ = self._determine_next_query_point(params_, explore)
-
-        self.parameters.append(params_)
-        params[:] = params_
+        self.parameters = self.bayes_opt.select_query_point(self.boundaries)
+        params[:] = self.parameters
 
     def set_evaluation_feedback(self, feedbacks):
         """Inform optimizer of outcome of a rollout with current weights."""
         return_ = check_feedback(feedbacks, compute_sum=True)
         # Transform reward (e.g. to a log-scale)
         return_ = self.value_transform(return_)
-        if return_ > self.opt_value:
-            self.opt_value = return_
-            self.opt_params = self.parameters[-1]
 
-        self.returns.append(return_)
+        self.bayes_opt.update(self.parameters, return_)
 
     def get_best_parameters(self):
-        return self.opt_params
+        return self.bayes_opt.best_params()
 
     def is_behavior_learning_done(self):
         # TODO
         return False
-
-    def _determine_next_query_point(self, start_point, explore):
-        # Train model approximating the return landscape
-        self.model.train(np.vstack(self.parameters), self.returns)
-
-        # Create acquisition function
-        kappa = self.kappa if explore else 0.0
-        acquisition_function = ACQUISITION_FUNCTIONS[self.acquisition_function](
-            self.model.gp, kappa)
-
-        def target_function(x, compute_gradient=False):
-            # Check boundaries
-            if not np.all(np.logical_and(x >= self.boundaries[:, 0],
-                                         x <= self.boundaries[:, 1])):
-                return -np.inf
-
-            return acquisition_function(x, baseline_value=self.opt_value,
-                                        compute_gradient=compute_gradient)
-
-        # Perform optimization
-        if self.acquisition_function != "random" or not explore:
-            opt = optimize(target_function, boundaries=self.boundaries,
-                           optimizer=self.optimizer,
-                           maxf=self.optimizer_kwargs.get("maxf", 100),
-                           approx_grad=self.approx_grad,
-                           random=self.random)
-        else:  # the start point is already randomly chosen, so we keep it
-            opt = start_point
-
-        # Check if we have tried a very similar parameter vector before
-        if (cdist(self.parameters, [opt]).min() / 1e-8 <
-                np.linalg.norm(self.boundaries[:, 1] - self.boundaries[:, 0])):
-            # Choose a random parameter vector
-            opt = self.random.uniform(size=self.dimension) \
-                * (self.boundaries[:, 1] - self.boundaries[:, 0]) \
-                + self.boundaries[:, 0]
-
-        # Clip to hard boundaries
-        return np.maximum(self.boundaries[:, 0],
-                          np.minimum(opt, self.boundaries[:, 1]))
 
     def __getstate__(self):
         """Return a pickable state for this object """

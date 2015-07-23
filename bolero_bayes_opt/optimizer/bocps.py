@@ -1,18 +1,22 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 
+from copy import deepcopy
+
 import numpy as np
+
 from bolero.optimizer import ContextualOptimizer
 from bolero.representation.ul_policies import BoundedScalingPolicy
 from bolero.utils.validation import check_feedback, check_random_state
-from ..utils.optimization import global_optimization
-#from ..acquisition_functions import (CONTEXTUAL_ACQUISITION_FUNCTIONS,
-#                                    ZeroBaseline, MaxLCBBaseline)
-from ..model import GaussianProcessModel
-#from .model import model_free_policy_training, model_based_policy_training
+
+from bayesian_optimization import (BayesianOptimizer, GaussianProcessModel,
+    create_acquisition_function)
+
+from ..representation.ul_policies \
+    import model_free_policy_training, model_based_policy_training
 
 
-class ContextualBayesianOptimizer(ContextualOptimizer):
-    """Contextual Bayesian optimization.
+class BOCPSOptimizer(ContextualOptimizer):
+    """Bayesian Optimization for Contextual Policy Search (BO-CPS).
 
     Parameters
     ----------
@@ -21,11 +25,9 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
 
     acquisition_function : string, optional (default: 'ucb')
         String identifying the acquisition function to be used. Supported are
-        * "ucb": Upper-Confidence Bound (default)
-        * "pi": Probability of Improvement
-        * "ei": Expected Improvement
-        * "eisp": Expected Improvement in Skill Performance
-        * "random": Randomly choose point to sample
+        * "UCB": Upper-Confidence Bound (default)
+        * "PI": Probability of Improvement
+        * "EI": Expected Improvement
 
     policy : UpperLevelPolicy (default: None)
         If not None, the given upper-level-policy object is optimized
@@ -75,7 +77,6 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
                  value_transform=lambda x: x,
                  approx_grad=True, random_state=None,
                  *args, **kwargs):
-        assert acquisition_function in CONTEXTUAL_ACQUISITION_FUNCTIONS
         assert isinstance(boundaries, list), \
             "Boundaries must be passed as a list of tuples (pairs)."
 
@@ -83,8 +84,10 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
         self.value_transform = value_transform
         if isinstance(self.value_transform, basestring):
             self.value_transform = eval(self.value_transform)
+        self.optimizer = optimizer
 
         self.acquisition_function = acquisition_function
+        self.gp_kwargs = gp_kwargs
 
         self.policy = policy
         if self.policy is not None:  # Bound policy to allowed parameter space
@@ -94,19 +97,20 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
                                      bounds=np.array(self.boundaries))
             self.policy_fitted = False
 
-        self.optimizer = optimizer
-        self.optimizer_kwargs = optimizer_kwargs
-        self.approx_grad = approx_grad
+        self.rng = check_random_state(random_state)
 
-        self.kappa = acq_fct_kwargs.pop('kappa', kwargs.get('kappa', 0.0))
-        self.acq_fct_kwargs = acq_fct_kwargs
-
-        self.gp_kwargs = gp_kwargs
-
-        self.random = check_random_state(random_state)
-
+        # Create surrogate model, acquisition function and Bayesian optimizer
         self.model = \
-            GaussianProcessModel(random_state=self.random, **self.gp_kwargs)
+            GaussianProcessModel(random_state=self.rng, **gp_kwargs)
+
+        self.acquisition_function = \
+            create_acquisition_function(acquisition_function, self.model,
+                                        **acq_fct_kwargs)
+
+        self.bayes_opt = BayesianOptimizer(
+            model=self.model, acquisition_function=self.acquisition_function,
+            optimizer=self.optimizer,
+            maxf=optimizer_kwargs.get("maxf", 100))
 
     def init(self, n_params, n_context_dims):
         self.dimension = n_params
@@ -119,14 +123,10 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
         else:
             raise Exception("Boundaries not specified for all dimensions")
 
-        self.contexts = []
-        self.parameters = []
-        self.returns = []
-
     def set_context(self, context):
         """ Set context of next evaluation"""
-        super(ContextualBayesianOptimizer, self).set_context(context)
-        self.contexts.append(context)
+        super(BOCPSOptimizer, self).set_context(context)
+        self.context = context
 
     def get_next_parameters(self, params, explore=True):
         """Return parameter vector that shall be evaluated next.
@@ -139,27 +139,18 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
         explore : bool
             Whether exploration in parameter selection is enabled
         """
-        params_ = \
-            self.random.uniform(size=self.dimension) \
-            * (self.boundaries[:, 1] - self.boundaries[:, 0]) \
-            + self.boundaries[:, 0]
-        # Find query point where the acquisition function becomes maximal
-        if len(self.parameters) > self.dimension + self.context_dims:
-            params_ = \
-                self._determine_next_query_point(self.contexts[-1], params_,
-                                                 explore)
-
-        assert np.issubdtype(params_.dtype, float)
-
-        self.parameters.append(params_)
-        params[:] = params_
+        self.parameters = \
+            self._determine_next_query_point(self.context, self.bayes_opt)
+        params[:] = self.parameters
 
     def set_evaluation_feedback(self, feedbacks):
         """Inform optimizer of outcome of a rollout with current weights."""
         return_ = check_feedback(feedbacks, compute_sum=True)
         # Transform reward (e.g., to a log-scale)
         return_ = self.value_transform(return_)
-        self.returns.append(return_)
+
+        self.bayes_opt.update(np.hstack((self.context, self.parameters)),
+                              return_)
 
         if self.policy is not None:
             # Policy derived from internal model is no longer valid as the data
@@ -192,15 +183,19 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
                 return self.policy
             assert "model-free" in training or "model-based" in training, \
                 "training must contain either 'model-free' or 'model-based'"
+            X = np.asarray(self.bayes_opt.X_)
+            contexts = X[:, :self.context_dims]
+            parameters = X[:, self.context_dims:]
+            returns = self.bayes_opt.y_
             # Perform training
             if "model-free" in training:
                 self.policy = model_free_policy_training(
-                    self.policy, np.array(self.contexts[:len(self.parameters)]),
-                    self.parameters, self.returns, epsilon=1.0, min_eta=1e-6)
+                    self.policy, contexts, parameters, returns,
+                    epsilon=1.0, min_eta=1e-6)
             if "model-based" in training:
                 self.policy = model_based_policy_training(
-                    self.policy, self.contexts[:len(self.parameters)],
-                    self.parameters, self.returns, boundaries=self.boundaries,
+                    self.policy, contexts, parameters, returns,
+                    boundaries=self.boundaries,
                     policy_initialized="model-free" in training,
                     maxfun=maxfun, variance=variance,
                     model_conf=self.gp_kwargs)
@@ -208,82 +203,16 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
             return self.policy
         else:
             # TODO return UpperLevelPolicy object
+            greedy_optimizer = deepcopy(self.bayes_opt)
+            greedy_optimizer.acquisition_function = \
+                create_acquisition_function("GREEDY", self.model)
             def non_parametric_policy(c, explore):
-                return self._determine_next_query_point(c, None, explore)
+                return self._determine_next_query_point(c, greedy_optimizer)
             return non_parametric_policy
 
     def is_behavior_learning_done(self):
         # TODO
         return False
-
-    def _determine_next_query_point(self, context, start_point, explore):
-        # Concatenate contexts and params
-        inputs = np.hstack([np.vstack(self.contexts[:len(self.parameters)]),
-                            np.vstack(self.parameters)])
-        # Train model approximating the context x parameter -> return
-        # landscape
-        self.model.train(inputs, self.returns)
-
-        if explore:
-            # Callback to invoke optimizer which optimizes a certain
-            # function over parameter space
-            param_selection_callback = lambda f, x0=None: \
-                optimize(f, boundaries=self.boundaries,
-                         optimizer="random+lbfgs", x0=x0,
-                         maxf=self.optimizer_kwargs.get("maxf", 100),
-                         approx_grad=self.approx_grad,
-                         random=self.random)
-
-            if self.acquisition_function in ["pi", "ei"]:
-                acquisition_function = \
-                    CONTEXTUAL_ACQUISITION_FUNCTIONS[self.acquisition_function](
-                        self.model.gp, self.kappa)
-                cx_acquisition_fct = \
-                    MaxLCBBaseline(acquisition_function,
-                                   self.model.gp, param_selection_callback,
-                                   self.context_dims, kappa=self.kappa)
-            elif self.acquisition_function == "contextual_ei":
-                cx_acquisition_fct = \
-                    CONTEXTUAL_ACQUISITION_FUNCTIONS["contextual_ei"](
-                        self.model.gp, param_selection_callback,
-                        self.context_dims, kappa=self.kappa,
-                        boundaries=self.boundaries, **self.acq_fct_kwargs)
-            elif self.acquisition_function == "eisp":
-                cx_acquisition_fct = \
-                    CONTEXTUAL_ACQUISITION_FUNCTIONS["eisp"](
-                        self.model.gp, param_selection_callback,
-                        self.context_dims, kappa=self.kappa)
-            else:  # UCB and random do not require a baseline-value
-                acquisition_function = \
-                    CONTEXTUAL_ACQUISITION_FUNCTIONS[self.acquisition_function](
-                        self.model.gp, self.kappa)
-                cx_acquisition_fct = \
-                    ZeroBaseline(acquisition_function)
-
-        def target_function(x, compute_gradient=False):
-            # Concatenate contexts and parameter x
-            cx = np.hstack([context, x])
-
-            if explore:
-                # Evaluate acquisition function
-                return cx_acquisition_fct(cx)
-            else:
-                # Return mean prediction of GP
-                return self.model.gp.predict(cx, return_std=False)[0]
-
-        # Perform optimization
-        if self.acquisition_function != "random" or not explore:
-            opt = optimize(target_function, boundaries=self.boundaries,
-                           optimizer=self.optimizer,
-                           maxf=self.optimizer_kwargs.get("maxf", 100),
-                           approx_grad=self.approx_grad,
-                           random=self.random)
-        else:  # the start point is already randomly chosen, so we keep it
-            opt = start_point
-
-        # Clip to hard boundaries
-        return np.maximum(self.boundaries[:, 0],
-                          np.minimum(opt, self.boundaries[:, 1]))
 
     def get_desired_context(self):
         """Chooses desired context for next evaluation.
@@ -295,6 +224,16 @@ class ContextualBayesianOptimizer(ContextualOptimizer):
             the environment may select the next context without any preferences.
         """
         return None
+
+    def _determine_next_query_point(self, context, optimizer):
+        # Prepend fixed context to search space
+        cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
+        cx_boundaries[:self.context_dims] = context
+        cx_boundaries[self.context_dims:] = self.boundaries
+
+        # Determine optimal parameters for fixed context
+        cx = optimizer.select_query_point(cx_boundaries)
+        return cx[self.context_dims:]
 
     def __getstate__(self):
         """ Return a pickable state for this object """

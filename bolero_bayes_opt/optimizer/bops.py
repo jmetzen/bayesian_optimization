@@ -35,10 +35,9 @@ class BOPSOptimizer(Optimizer):
 
     acquisition_function : optional, string
         String identifying the acquisition function to be used. Supported are
-        * "ucb": Upper-Confidence Bound (default)
-        * "pi": Probability of Improvement
-        * "ei": Expected Improvement
-        * "random": Randomly choose point to sample
+        * "UCB": Upper-Confidence Bound (default)
+        * "PI": Probability of Improvement
+        * "EI": Expected Improvement
 
     optimizer: optional, string
         The global optimizer used internally to find the global optimum of the

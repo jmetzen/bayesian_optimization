@@ -1,20 +1,22 @@
 
 import numpy as np
 
+from sklearn.utils import check_random_state
+
 from .utils.optimization import global_optimization
 
 
 class BayesianOptimizer(object):
 
     def __init__(self, model, acquisition_function, optimizer, maxf=1000,
-                 initial_random_samples=5, seed=0):
+                 initial_random_samples=5, random_state=0):
         self.model = model
         self.acquisition_function = acquisition_function
         self.optimizer = optimizer
         self.maxf = maxf
         self.initial_random_samples = initial_random_samples
 
-        self.rng = np.random.RandomState(seed)
+        self.rng = check_random_state(random_state)
 
         self.X_ = []
         self.y_ = []
@@ -47,3 +49,6 @@ class BayesianOptimizer(object):
         self.X_.append(X)
         self.y_.append(y)
         self.model.fit(self.X_, self.y_)
+
+    def best_params():
+        return np.max(self.y_)

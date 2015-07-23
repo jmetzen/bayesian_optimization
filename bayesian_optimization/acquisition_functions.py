@@ -143,10 +143,26 @@ class UpperConfidenceBound(object):
         return ucb
 
 
+class Greedy(UpperConfidenceBound):
+    """ The greedy acquisition function
+
+    This acquisition function always selects the query point with the maximal
+    predicted value while ignoring uncertainty altogether.
+
+    Parameters
+    ----------
+    model: gaussian-process object
+        Gaussian process model, which models the return landscape
+    """
+    def __init__(self, model, **kwargs):
+        super(Greedy, self).__init__(model, kappa=0)
+
+
 ACQUISITION_FUNCTIONS = {
     "PI": ProbabilityOfImprovement,
     "EI": ExpectedImprovement,
-    "UCB": UpperConfidenceBound}
+    "UCB": UpperConfidenceBound,
+    "GREEDY": Greedy}
 
 
 def create_acquisition_function(name, model, **kwargs):

@@ -141,3 +141,13 @@ class UpperConfidenceBound(object):
         ucb = (mu_x - incumbent) + self.kappa * sigma_x
 
         return ucb
+
+
+ACQUISITION_FUNCTIONS = {
+    "PI": ProbabilityOfImprovement,
+    "EI": ExpectedImprovement,
+    "UCB": UpperConfidenceBound}
+
+
+def create_acquisition_function(name, model, **kwargs):
+    return ACQUISITION_FUNCTIONS[name](model, **kwargs)

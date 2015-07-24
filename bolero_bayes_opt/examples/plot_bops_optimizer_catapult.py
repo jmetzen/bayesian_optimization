@@ -64,7 +64,6 @@ for rollout in range(n_rollouts):
 
     rewards[rollout] = reward
     opt.set_evaluation_feedback(reward)
-    print reward
 
 plt.figure(0)
 plt.plot(rewards)

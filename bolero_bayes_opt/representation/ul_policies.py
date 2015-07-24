@@ -329,8 +329,7 @@ def model_based_policy_training_pretrained(
         # Determine parameters selected by policy for given contexts
         params = policy(contexts, explore=False)
         if boundaries is not None:  # check boundaries
-            params = np.minimum(np.maximum(params, boundaries[:, 0]),
-                                boundaries[:, 1])
+            params = np.clip(params, boundaries[:, 0], boundaries[:, 1])
         # Compute mean output of GP model for contexts and selected params
         values = model.predict(np.hstack((contexts, params)))
         # Return mean over return obtained on all training contexts

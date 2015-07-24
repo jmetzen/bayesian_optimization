@@ -79,6 +79,8 @@ class BOCPSOptimizer(ContextualOptimizer):
                  *args, **kwargs):
         assert isinstance(boundaries, list), \
             "Boundaries must be passed as a list of tuples (pairs)."
+        assert acquisition_function in ["UCB", "GREEDY"], \
+            "%s acquisition function not yet supported." % acquisition_function
 
         self.boundaries = boundaries
         self.value_transform = value_transform

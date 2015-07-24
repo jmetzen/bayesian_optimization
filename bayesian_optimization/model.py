@@ -115,6 +115,7 @@ class GaussianProcessModel(object):
         self.last_training_size = X.shape[0]
 
     def predictive_distribution(self, X):
+        """ Return predictive distributon (mean, std-dev) at X."""
         return self.gp.predict(X, return_std=True)
 
     def _create_gp(self, training_size):

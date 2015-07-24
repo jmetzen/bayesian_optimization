@@ -1,12 +1,15 @@
 def configuration(parent_package="", top_path=None):
     from numpy.distutils.misc_util import Configuration
 
-    config = Configuration("bayesian_optimization", parent_package, top_path)
+    config = Configuration("bolero_bayes_opt", parent_package, top_path)
     config.set_options(ignore_setup_xxx_py=True,
                        assume_default_configuration=True,
                        delegate_options_to_subpackages=True,
                        quiet=True)
-    config.add_subpackage("utils")
+
+    config.add_subpackage("environment")
+    config.add_subpackage("optimizer")
+    config.add_subpackage("representation")
     return config
 
 if __name__ == "__main__":

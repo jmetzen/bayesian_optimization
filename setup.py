@@ -40,6 +40,7 @@ def configuration(parent_package='', top_path=None):
                        quiet=True)
 
     config.add_subpackage("bayesian_optimization")
+    config.add_subpackage("bolero_bayes_opt")
     return config
 
 

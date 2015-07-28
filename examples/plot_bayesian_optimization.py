@@ -1,4 +1,10 @@
-""" Visualize Bayesian optimization on a simple 1D function. """
+"""
+=====================================
+Illustration of Bayesian Optimization
+=====================================
+
+Visualize Bayesian optimization on a simple 1D function.
+"""
 
 import numpy as np
 import matplotlib.pyplot as plt

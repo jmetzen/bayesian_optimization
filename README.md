@@ -10,11 +10,6 @@ Install our version of scikit-learn
 
 Install `bayesian_optimization`
 
-    git clone git@git.hb.dfki.de:afabisch/bayesian_optimization.git
+    git clone git@git.hb.dfki.de:jmetzen/bayesian_optimization.git
     cd bayesian_optimization
     sudo python setup.py install
-
-TODO
-====
-
-* Catapult notebook

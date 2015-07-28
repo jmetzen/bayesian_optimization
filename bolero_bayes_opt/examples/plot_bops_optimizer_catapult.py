@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C
 
-from bolero_bayes_opt import Catapult
+from bolero.environment.catapult import Catapult
 from bolero_bayes_opt import BOPSOptimizer
 
 catapult = Catapult([(0, 0), (2.0, -0.5), (3.0, 0.5), (4, 0.25),
@@ -32,7 +32,7 @@ optimal_reward = -np.inf
 for _ in range(10):
     x0 = [uniform.rvs(5.0, 5.0), uniform.rvs(0.0, np.pi/2)]
     result = fmin_l_bfgs_b(
-        lambda x, target=target: -catapult._compute_reward(x, target=target),
+        lambda x, target=target: -catapult._compute_reward(x, context=target),
         x0, approx_grad=True, bounds=[(5.0, 10.0), (0.0, np.pi/2)])
     if -result[1] > optimal_reward:
         optimal_reward = -result[1]
@@ -44,7 +44,7 @@ v = np.linspace(5.0, 10.0, 100)
 theta = np.linspace(0.0, np.pi/2, 100)
 V, Theta = np.meshgrid(v, theta)
 
-Z = np.array([[partial(catapult._compute_reward, target=target)
+Z = np.array([[partial(catapult._compute_reward, context=target)
                    ([V[i, j], Theta[i, j]])
                for j in range(v.shape[0])]
                for i in range(theta.shape[0])])

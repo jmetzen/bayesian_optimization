@@ -121,3 +121,114 @@ class BayesianOptimizer(object):
     def best_value():
         """ Returns the optimal value found so far."""
         return np.max(self.y_)
+
+
+class REMBOOptimizer(BayesianOptimizer):
+
+    def __init__(self, n_dims, n_embedding_dims=2, *args, **kwargs):
+        super(REMBOOptimizer, self).__init__(*args, **kwargs)
+
+        self.n_dims = n_dims
+        self.n_embedding_dims = n_embedding_dims
+
+        self.A = self.rng.normal(size=(self.n_dims, self.n_embedding_dims))
+        self.A /= np.linalg.norm(self.A, axis=1)[:, np.newaxis]
+
+        self.X_embedded_ = []
+        self.boundaries_cache = {}
+
+    def select_query_point(self, boundaries,
+                           incumbent_fct=lambda y: np.max(y)):
+        """ Select the next query point in boundaries based on acq. function.
+
+        Parameters
+        ----------
+        boundaries : ndarray-like, shape: [n_dims, 2]
+            Box constraint on allowed query points. First axis corresponds
+            to dimensions of the search space and second axis to minimum and
+            maximum allowed value in the respective dimensions.
+
+        incumbent_fct: function, default: returns maximum observed value
+            A function which is used to determine the incumbent for the
+            acquisition function. Defaults to the maximum observed value.
+        """
+        boundaries = np.asarray(boundaries)
+        if not boundaries.shape[0] == self.n_dims:
+            raise Exception("Dimensionality of boundaries should be %d"
+                            % self.n_dims)
+
+        # Compute boundaries on embedded space
+        boundaries_embedded = self.compute_boundaries_embedding(boundaries)
+
+        if len(self.X_) < self.initial_random_samples:
+            # Select query point randomly
+            X_query_embedded = \
+                self.rng.uniform(size=boundaries_embedded.shape[0]) \
+                * (boundaries_embedded[:, 1] - boundaries_embedded[:, 0]) \
+                    + boundaries_embedded[:, 0]
+        else:
+            # Select query point by finding optimum of acquisition function
+            # within boundaries
+            def objective_function(x):
+                # Check boundaries
+                if not np.all(np.logical_and(x >= boundaries_embedded[:, 0],
+                                             x <= boundaries_embedded[:, 1])):
+                    return -np.inf
+
+                incumbent = incumbent_fct(self.y_)
+                return self.acquisition_function(x, incumbent=incumbent)
+
+            X_query_embedded = global_optimization(
+                objective_function, boundaries=boundaries_embedded,
+                optimizer=self.optimizer, maxf=self.maxf, random=self.rng)
+
+        self.X_embedded_.append(X_query_embedded)
+
+        # Map to higher dimensional space and clip to hard boundaries
+        X_query = np.clip(self.A.dot(X_query_embedded),
+                          boundaries[:, 0], boundaries[:, 1])
+        return X_query
+
+    def update(self, X, y):
+        """ Update internal model for observed (X, y) from true function. """
+        # XXX
+        #if not np.all(np.clip(self.A.dot(self.X_embedded_[-1]),
+        #                      boundaries[:, 0], boundaries[:, 1]) == X):
+        #    raise Exception("Not evaluated selected query point.")
+
+        self.X_.append(X)
+        self.y_.append(y)
+        self.model.fit(self.X_embedded_, self.y_)
+
+    def compute_boundaries_embedding(self, boundaries):
+        # Check if boundaries have been determined before
+        boundaries_hash = hash(boundaries.tostring())
+        if boundaries_hash in self.boundaries_cache:
+            return self.boundaries_cache[boundaries_hash]
+
+        # Determine boundaries on embedded space
+        boundaries_embedded = np.empty((self.n_embedding_dims, 2))
+        for dim in range(self.n_embedding_dims):
+            x_embedded = np.zeros(self.n_embedding_dims)
+            while True:
+                x = self.A.dot(x_embedded)
+                if np.sum(np.logical_or(x < boundaries[:, 0],
+                                        x > boundaries[:, 1])) \
+                   > self.n_dims / 2:
+                    break
+                x_embedded[dim] -= 0.01
+            boundaries_embedded[dim, 0] = x_embedded[dim]
+
+            x_embedded = np.zeros(self.n_embedding_dims)
+            while True:
+                x = self.A.dot(x_embedded)
+                if np.sum(np.logical_or(x < boundaries[:, 0],
+                                        x > boundaries[:, 1])) \
+                   > self.n_dims / 2:
+                    break
+                x_embedded[dim] += 0.01
+            boundaries_embedded[dim, 1] = x_embedded[dim]
+
+        self.boundaries_cache[boundaries_hash] = boundaries_embedded
+
+        return boundaries_embedded

@@ -3,9 +3,9 @@
 Illustration of REMBO
 =====================
 
-Compare Bayesian Optimization and Random EMbedding Bayesian Optimization
-(REMBO) on function with many dimensions but a low effective
-dimensionality (2d). In this low-dimensional subspace, the Branin-Hoo
+Compare Bayesian Optimization, Random EMbedding Bayesian Optimization
+(REMBO), and Interleave REMBO on a function with many dimensions but a low
+effective dimensionality (2d). In this low-dimensional subspace, the Branin-Hoo
 function needs to be optimized.
 """
 
@@ -15,15 +15,15 @@ import matplotlib.pyplot as plt
 
 from sklearn.gaussian_process.kernels import Matern, ConstantKernel as C
 
-from bayesian_optimization import (REMBOOptimizer, BayesianOptimizer,
-    GaussianProcessModel, UpperConfidenceBound)
+from bayesian_optimization import (REMBOOptimizer, InterleavedREMBOOptimizer,
+    BayesianOptimizer, GaussianProcessModel, UpperConfidenceBound)
 
 n_dims = 20
 n_embedding_dims = 2
-n_repetitions = 15
+n_repetitions = 10
 n_trials = 100
 kappa = 2.5
-colors = {"rembo": "g", "bo": "r"}
+colors = {"interleaved_rembo": "b", "rembo": "g", "bo": "r"}
 for it in range(n_repetitions):
     ind = np.random.RandomState(it).choice(n_dims, 2, replace=False)
     def f(X):  # target function (branin-hoo)
@@ -38,7 +38,7 @@ for it in range(n_repetitions):
         return -(a * (x2 - b*x1**2 + c*x1 - r)**2 + s*(1- t)*np.cos(x1) + s) \
             + 0.397887 # Adjust the optimal value to be 0.
 
-    for name in ["rembo", "bo"]:
+    for name in ["interleaved_rembo", "rembo", "bo"]:
         # Configuration
         if name == "rembo":
             kernel = C(1.0, (0.01, 1000.0)) \
@@ -46,6 +46,15 @@ for it in range(n_repetitions):
             model = GaussianProcessModel(kernel=kernel)
             acquisition_function = UpperConfidenceBound(model, kappa=kappa)
             opt = REMBOOptimizer(
+                n_dims=n_dims, n_embedding_dims=n_embedding_dims, model=model,
+                acquisition_function=acquisition_function, optimizer="direct",
+                random_state=it)
+        elif name == "interleaved_rembo":
+            kernel = C(1.0, (0.01, 1000.0)) \
+                * Matern(l=1.0, l_bounds=[(0.001, 100)])
+            model = GaussianProcessModel(kernel=kernel)
+            acquisition_function = UpperConfidenceBound(model, kappa=kappa)
+            opt = InterleavedREMBOOptimizer(interleaved_runs=2,
                 n_dims=n_dims, n_embedding_dims=n_embedding_dims, model=model,
                 acquisition_function=acquisition_function, optimizer="direct",
                 random_state=it)

@@ -1,5 +1,7 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 
+from itertools import cycle
+
 import numpy as np
 
 from sklearn.utils import check_random_state
@@ -124,6 +126,32 @@ class BayesianOptimizer(object):
 
 
 class REMBOOptimizer(BayesianOptimizer):
+    """ Random EMbedding Bayesian Optimization (REMBO).
+
+    This extension of Bayesian Optimizer (BO) is better suited for
+    high-dimensional problems with a low effective dimensionality than BO.
+    This is achieved by restricting the optimization to a low-dimensional
+    linear manifold embedded in the higher dimensional space. Theoretical
+    results suggest that even if the manifold is chosen randomly, the
+    optimum on this manifold equals the global optimum if the function is
+    indeed of the same intrinsic dimensionality as the manifold.
+
+    .. seealso:: Wang, Zoghi, Hutter, Matheson, de Freitas
+                 "Bayesian Optimization in High Dimensions via Random
+                 Embeddings", International Joint Conferences on Artificial
+                 Intelligence (IJCAI), 2013
+
+    Parameters
+    ----------
+    n_dims : int
+        The dimensionality of the actual search space
+
+    n_embedding_dims : int, default: 2
+        The dimensionality of the randomly chosen linear manifold on which the
+        optimization is performed
+
+    Further parameters are the same as in BayesianOptimizer
+    """
 
     def __init__(self, n_dims, n_embedding_dims=2, *args, **kwargs):
         super(REMBOOptimizer, self).__init__(*args, **kwargs)
@@ -131,6 +159,7 @@ class REMBOOptimizer(BayesianOptimizer):
         self.n_dims = n_dims
         self.n_embedding_dims = n_embedding_dims
 
+        # Determine random embedding matrix
         self.A = self.rng.normal(size=(self.n_dims, self.n_embedding_dims))
         self.A /= np.linalg.norm(self.A, axis=1)[:, np.newaxis]
 
@@ -158,7 +187,7 @@ class REMBOOptimizer(BayesianOptimizer):
                             % self.n_dims)
 
         # Compute boundaries on embedded space
-        boundaries_embedded = self.compute_boundaries_embedding(boundaries)
+        boundaries_embedded = self._compute_boundaries_embedding(boundaries)
 
         if len(self.X_) < self.initial_random_samples:
             # Select query point randomly
@@ -191,16 +220,12 @@ class REMBOOptimizer(BayesianOptimizer):
 
     def update(self, X, y):
         """ Update internal model for observed (X, y) from true function. """
-        # XXX
-        #if not np.all(np.clip(self.A.dot(self.X_embedded_[-1]),
-        #                      boundaries[:, 0], boundaries[:, 1]) == X):
-        #    raise Exception("Not evaluated selected query point.")
-
         self.X_.append(X)
         self.y_.append(y)
         self.model.fit(self.X_embedded_, self.y_)
 
-    def compute_boundaries_embedding(self, boundaries):
+    def _compute_boundaries_embedding(self, boundaries):
+        """ Approximate box constraint boundaries on low-dimensional manifold"""
         # Check if boundaries have been determined before
         boundaries_hash = hash(boundaries.tostring())
         if boundaries_hash in self.boundaries_cache:
@@ -232,3 +257,64 @@ class REMBOOptimizer(BayesianOptimizer):
         self.boundaries_cache[boundaries_hash] = boundaries_embedded
 
         return boundaries_embedded
+
+
+class InterleavedREMBOOptimizer(BayesianOptimizer):
+    """ Interleaved Random EMbedding Bayesian Optimization (REMBO).
+
+    In this extension of REMBO, several different random embeddings are chosen
+    and the optimization is performed on all embeddings interleaved (in a
+    round-robin fashion). This way, the specific choice of one random embedding
+    becomes less relevant. On the other hand, less evaluations on each
+    particular embedding can be performed.
+
+    .. seealso:: Wang, Zoghi, Hutter, Matheson, de Freitas
+                 "Bayesian Optimization in High Dimensions via Random
+                 Embeddings", International Joint Conferences on Artificial
+                 Intelligence (IJCAI), 2013
+
+    Parameters
+    ----------
+    interleaved_runs : int
+        The number of interleaved runs (each on a different random embedding).
+        This parameter is denoted as k by Wang et al.
+
+    Further parameters are the same as in REMBOOptimizer
+    """
+
+    def __init__(self, interleaved_runs=2, *args, **kwargs):
+        random_state = kwargs.pop("random_state", 0)
+
+        self.rembos = [REMBOOptimizer(random_state=random_state + 100 + run,
+                                      *args, **kwargs)
+                       for run in range(interleaved_runs)]
+        self.rembos = cycle(self.rembos)
+        self.current_rembo = self.rembos.next()
+
+        self.X_ = []
+        self.y_ = []
+
+    def select_query_point(self, boundaries,
+                           incumbent_fct=lambda y: np.max(y)):
+        """ Select the next query point in boundaries based on acq. function.
+
+        Parameters
+        ----------
+        boundaries : ndarray-like, shape: [n_dims, 2]
+            Box constraint on allowed query points. First axis corresponds
+            to dimensions of the search space and second axis to minimum and
+            maximum allowed value in the respective dimensions.
+
+        incumbent_fct: function, default: returns maximum observed value
+            A function which is used to determine the incumbent for the
+            acquisition function. Defaults to the maximum observed value.
+        """
+        return self.current_rembo.select_query_point(boundaries, incumbent_fct)
+
+    def update(self, X, y):
+        """ Update internal REMBO responsible for observed (X, y). """
+        self.X_.append(X)
+        self.y_.append(y)
+
+        self.current_rembo.update(X, y)
+        self.current_rembo = self.rembos.next()

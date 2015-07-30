@@ -150,18 +150,27 @@ class REMBOOptimizer(BayesianOptimizer):
         The dimensionality of the randomly chosen linear manifold on which the
         optimization is performed
 
+    data_space: array-like, shape=[n_dims, 2], default: None
+        The boundaries of the data-space. This is used for scaling the mapping
+        from embedded space to data space, which is useful if dimensions of the
+        data space have different ranges or are not centred around 0.
+
     Further parameters are the same as in BayesianOptimizer
     """
 
-    def __init__(self, n_dims, n_embedding_dims=2, *args, **kwargs):
+    def __init__(self, n_dims, n_embedding_dims=2, data_space=None,
+                 *args, **kwargs):
         super(REMBOOptimizer, self).__init__(*args, **kwargs)
 
         self.n_dims = n_dims
         self.n_embedding_dims = n_embedding_dims
+        self.data_space = data_space
+        if self.data_space is not None:
+            self.data_space = np.asarray(self.data_space)
 
         # Determine random embedding matrix
         self.A = self.rng.normal(size=(self.n_dims, self.n_embedding_dims))
-        self.A /= np.linalg.norm(self.A, axis=1)[:, np.newaxis]
+        #self.A /= np.linalg.norm(self.A, axis=1)[:, np.newaxis]  # XXX
 
         self.X_embedded_ = []
         self.boundaries_cache = {}
@@ -214,7 +223,7 @@ class REMBOOptimizer(BayesianOptimizer):
         self.X_embedded_.append(X_query_embedded)
 
         # Map to higher dimensional space and clip to hard boundaries
-        X_query = np.clip(self.A.dot(X_query_embedded),
+        X_query = np.clip(self._map_to_dataspace(X_query_embedded),
                           boundaries[:, 0], boundaries[:, 1])
         return X_query
 
@@ -223,6 +232,14 @@ class REMBOOptimizer(BayesianOptimizer):
         self.X_.append(X)
         self.y_.append(y)
         self.model.fit(self.X_embedded_, self.y_)
+
+    def _map_to_dataspace(self, X_embedded):
+        X_query = self.A.dot(X_embedded)
+        if self.data_space is not None:
+            X_query = (X_query + 1) / 2 \
+                * (self.data_space[:, 1] - self.data_space[:, 0]) \
+                + self.data_space[:, 0]
+        return X_query
 
     def _compute_boundaries_embedding(self, boundaries):
         """ Approximate box constraint boundaries on low-dimensional manifold"""
@@ -236,7 +253,7 @@ class REMBOOptimizer(BayesianOptimizer):
         for dim in range(self.n_embedding_dims):
             x_embedded = np.zeros(self.n_embedding_dims)
             while True:
-                x = self.A.dot(x_embedded)
+                x = self._map_to_dataspace(x_embedded)
                 if np.sum(np.logical_or(x < boundaries[:, 0],
                                         x > boundaries[:, 1])) \
                    > self.n_dims / 2:
@@ -246,7 +263,7 @@ class REMBOOptimizer(BayesianOptimizer):
 
             x_embedded = np.zeros(self.n_embedding_dims)
             while True:
-                x = self.A.dot(x_embedded)
+                x = self._map_to_dataspace(x_embedded)
                 if np.sum(np.logical_or(x < boundaries[:, 0],
                                         x > boundaries[:, 1])) \
                    > self.n_dims / 2:

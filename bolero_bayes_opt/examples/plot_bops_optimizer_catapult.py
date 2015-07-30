@@ -20,19 +20,20 @@ kernel = C(100.0, (1.0, 10000.0)) \
     * Matern(l=(1.0, 1.0), l_bounds=[(0.1, 100), (0.1, 100)])
 
 opt = BOPSOptimizer(
-    boundaries=[(5, 10), (0, np.pi/2)],
+    boundaries=[(5, 10), (0, np.pi/2)], bo_type="bo",
     acquisition_function="UCB", acq_fct_kwargs=dict(kappa=2.5),
-    optimizer="direct+lbfgs", optimizer_kwargs=dict(maxf=100),
+    optimizer="direct+lbfgs", maxf=100,
     gp_kwargs=dict(kernel=kernel, normalize_y=True, sigma_squared_n=1e-5))
 
 
 target = 4.0  # Fixed target
+context = (target - 2.0) / 8.0
 # Compute maximal achievable reward for this target
 optimal_reward = -np.inf
 for _ in range(10):
     x0 = [uniform.rvs(5.0, 5.0), uniform.rvs(0.0, np.pi/2)]
     result = fmin_l_bfgs_b(
-        lambda x, target=target: -catapult._compute_reward(x, context=target),
+        lambda x, context=context: -catapult._compute_reward(x, context=context),
         x0, approx_grad=True, bounds=[(5.0, 10.0), (0.0, np.pi/2)])
     if -result[1] > optimal_reward:
         optimal_reward = -result[1]
@@ -44,7 +45,7 @@ v = np.linspace(5.0, 10.0, 100)
 theta = np.linspace(0.0, np.pi/2, 100)
 V, Theta = np.meshgrid(v, theta)
 
-Z = np.array([[partial(catapult._compute_reward, context=target)
+Z = np.array([[partial(catapult._compute_reward, context=context)
                    ([V[i, j], Theta[i, j]])
                for j in range(v.shape[0])]
                for i in range(theta.shape[0])])
@@ -60,7 +61,7 @@ for rollout in range(n_rollouts):
     opt.get_next_parameters(params_)
     samples[rollout] = (params_[0], params_[1])
 
-    reward = catapult._compute_reward(params_, target) - optimal_reward
+    reward = catapult._compute_reward(params_, context) - optimal_reward
 
     rewards[rollout] = reward
     opt.set_evaluation_feedback(reward)

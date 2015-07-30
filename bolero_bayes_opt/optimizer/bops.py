@@ -5,8 +5,8 @@ import numpy as np
 from bolero.optimizer import Optimizer
 from bolero.utils.validation import check_random_state, check_feedback
 
-from bayesian_optimization import (BayesianOptimizer, GaussianProcessModel,
-    create_acquisition_function)
+from bayesian_optimization import (REMBOOptimizer, InterleavedREMBOOptimizer,
+    BayesianOptimizer, GaussianProcessModel, create_acquisition_function)
 
 
 class BOPSOptimizer(Optimizer):
@@ -33,6 +33,11 @@ class BOPSOptimizer(Optimizer):
     boundaries : list of pair of floats
         The boundaries of the parameter space in which the optimum is search.
 
+    bo_type: str, default: "bo"
+        The type of Bayesian optimization performed. Can be "bo" for standard
+        Bayesian optimization, "rembo" for REMBO, or "interleaved_rembo" for
+        several interleaved runs of REMBO.
+
     acquisition_function : optional, string
         String identifying the acquisition function to be used. Supported are
         * "UCB": Upper-Confidence Bound (default)
@@ -51,11 +56,6 @@ class BOPSOptimizer(Optimizer):
         * "cmaes": Using CMA-ES
         * "cmaes+lbfgs": Using CMA-ES with subsequent L-BFGS
 
-    optimizer_kwargs: optional, dict
-        Optional keyword arguments passed to optimize function. Currently
-        supported is maxf (an integer, default=100), which determines the
-        maximum number of function evaluations
-
     acq_fct_kwargs: option, dict
         Optional keyword arguments passed to acquisition function. Currently
         supported is kappa (a float >= 0.0, default=0.0), which handles
@@ -70,22 +70,19 @@ class BOPSOptimizer(Optimizer):
         For instance, in some situations, a log-transform might be useful.
         Should be a monotonic increasing function. Defaults to identity.
 
-    approx_grad : optional, bool
-        Whether the gradient will be approximated numerically during
-        optimization or computed analytically. Defaults to False.
-
     random_state : optional, int
         Seed for the random number generator.
+
+    **kwargs: Passed directly to the BayesianOptimizer
     """
-    def __init__(self, boundaries, acquisition_function="ucb",
-                 optimizer="direct+lbfgs", optimizer_kwargs={},
-                 acq_fct_kwargs={}, gp_kwargs={},
-                 value_transform=lambda x: x,
-                 approx_grad=True, random_state=None, **kwargs):
+    def __init__(self, boundaries, bo_type="bo", acquisition_function="ucb",
+                 optimizer="direct+lbfgs", acq_fct_kwargs={}, gp_kwargs={},
+                 value_transform=lambda x: x, random_state=None, **kwargs):
         assert isinstance(boundaries, list), \
             "Boundaries must be passed as a list of tuples (pairs)."
 
         self.boundaries = boundaries
+        self.bo_type = bo_type
         self.value_transform = value_transform
         if isinstance(self.value_transform, basestring):
             self.value_transform = eval(self.value_transform)
@@ -101,10 +98,16 @@ class BOPSOptimizer(Optimizer):
             create_acquisition_function(acquisition_function, self.model,
                                         **acq_fct_kwargs)
 
-        self.bayes_opt = BayesianOptimizer(
+        if self.bo_type == "bo":
+            BoClass = BayesianOptimizer
+        elif self.bo_type == "rembo":
+            BoClass = REMBOOptimizer
+        elif self.bo_type == "interleaved_rembo":
+            BoClass = InterleavedREMBOOptimizer
+        self.bayes_opt = BoClass(
             model=self.model, acquisition_function=self.acquisition_function,
             optimizer=self.optimizer,
-            maxf=optimizer_kwargs.get("maxf", 100))
+            maxf=kwargs.pop("maxf", 100), **kwargs)
 
     def init(self, dimension):
         self.dimension = dimension

@@ -7,7 +7,6 @@ def configuration(parent_package="", top_path=None):
                        delegate_options_to_subpackages=True,
                        quiet=True)
 
-    config.add_subpackage("environment")
     config.add_subpackage("optimizer")
     config.add_subpackage("representation")
     return config

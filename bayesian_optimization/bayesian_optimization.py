@@ -156,21 +156,33 @@ class REMBOOptimizer(BayesianOptimizer):
         from embedded space to data space, which is useful if dimensions of the
         data space have different ranges or are not centred around 0.
 
+    n_keep_dims : int, default: 0
+        The number of dimensions which are not embedded in the manifold but are
+        kept 1-to-1 in the representation. This can be useful if some
+        dimensions are known to be relevant. Note that it is expected that
+        those dimensions come first in the data representation, i.e., the first
+        n_keep_dims dimensions are maintained.
+
     Further parameters are the same as in BayesianOptimizer
     """
 
     def __init__(self, n_dims, n_embedding_dims=2, data_space=None,
-                 *args, **kwargs):
+                 n_keep_dims=0, *args, **kwargs):
         super(REMBOOptimizer, self).__init__(*args, **kwargs)
 
         self.n_dims = n_dims
         self.n_embedding_dims = n_embedding_dims
         self.data_space = data_space
+        self.n_keep_dims = n_keep_dims
         if self.data_space is not None:
             self.data_space = np.asarray(self.data_space)
+            if self.data_space.shape[0] != self.n_dims - n_keep_dims:
+                raise Exception("Data space must be specified for all input "
+                                "dimensions which are not kept.")
 
         # Determine random embedding matrix
-        self.A = self.rng.normal(size=(self.n_dims, self.n_embedding_dims))
+        self.A = self.rng.normal(size=(self.n_dims - self.n_keep_dims,
+                                       self.n_embedding_dims))
         #self.A /= np.linalg.norm(self.A, axis=1)[:, np.newaxis]  # XXX
 
         self.X_embedded_ = []
@@ -235,39 +247,51 @@ class REMBOOptimizer(BayesianOptimizer):
         self.model.fit(self.X_embedded_, self.y_)
 
     def _map_to_dataspace(self, X_embedded):
-        X_query = self.A.dot(X_embedded)
+        """ Map data from manifold to original data space. """
+        X_query_kd = self.A.dot(X_embedded[self.n_keep_dims:])
         if self.data_space is not None:
-            X_query = (X_query + 1) / 2 \
+            X_query_kd = (X_query_kd + 1) / 2 \
                 * (self.data_space[:, 1] - self.data_space[:, 0]) \
                 + self.data_space[:, 0]
+        X_query = np.hstack((X_embedded[:self.n_keep_dims], X_query_kd))
+
         return X_query
 
     def _compute_boundaries_embedding(self, boundaries):
         """ Approximate box constraint boundaries on low-dimensional manifold"""
         # Check if boundaries have been determined before
-        boundaries_hash = hash(boundaries.tostring())
+        boundaries_hash = hash(boundaries[self.n_keep_dims:].tostring())
         if boundaries_hash in self.boundaries_cache:
-            return self.boundaries_cache[boundaries_hash]
+            boundaries_embedded = \
+                np.array(self.boundaries_cache[boundaries_hash])
+            boundaries_embedded[:self.n_keep_dims] = \
+                boundaries[:self.n_keep_dims]  # Overwrite keep-dim's boundaries
+            return boundaries_embedded
 
         # Determine boundaries on embedded space
-        boundaries_embedded = np.empty((self.n_embedding_dims, 2))
-        for dim in range(self.n_embedding_dims):
-            x_embedded = np.zeros(self.n_embedding_dims)
+        boundaries_embedded = \
+            np.empty((self.n_keep_dims + self.n_embedding_dims, 2))
+        boundaries_embedded[:self.n_keep_dims] = boundaries[:self.n_keep_dims]
+        for dim in range(self.n_keep_dims,
+                         self.n_keep_dims + self.n_embedding_dims):
+            x_embedded = np.zeros(self.n_keep_dims + self.n_embedding_dims)
             while True:
                 x = self._map_to_dataspace(x_embedded)
-                if np.sum(np.logical_or(x < boundaries[:, 0],
-                                        x > boundaries[:, 1])) \
-                   > self.n_dims / 2:
+                if np.sum(np.logical_or(
+                    x[self.n_keep_dims:] < boundaries[self.n_keep_dims:, 0],
+                    x[self.n_keep_dims:] > boundaries[self.n_keep_dims:, 1])) \
+                   > (self.n_dims - self.n_keep_dims) / 2:
                     break
                 x_embedded[dim] -= 0.01
             boundaries_embedded[dim, 0] = x_embedded[dim]
 
-            x_embedded = np.zeros(self.n_embedding_dims)
+            x_embedded = np.zeros(self.n_keep_dims + self.n_embedding_dims)
             while True:
                 x = self._map_to_dataspace(x_embedded)
-                if np.sum(np.logical_or(x < boundaries[:, 0],
-                                        x > boundaries[:, 1])) \
-                   > self.n_dims / 2:
+                if np.sum(np.logical_or(
+                    x[self.n_keep_dims:] < boundaries[self.n_keep_dims:, 0],
+                    x[self.n_keep_dims:] > boundaries[self.n_keep_dims:, 1])) \
+                   > (self.n_dims - self.n_keep_dims) / 2:
                     break
                 x_embedded[dim] += 0.01
             boundaries_embedded[dim, 1] = x_embedded[dim]

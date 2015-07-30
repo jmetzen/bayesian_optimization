@@ -98,16 +98,7 @@ class BOPSOptimizer(Optimizer):
             create_acquisition_function(acquisition_function, self.model,
                                         **acq_fct_kwargs)
 
-        if self.bo_type == "bo":
-            BoClass = BayesianOptimizer
-        elif self.bo_type == "rembo":
-            BoClass = REMBOOptimizer
-        elif self.bo_type == "interleaved_rembo":
-            BoClass = InterleavedREMBOOptimizer
-        self.bayes_opt = BoClass(
-            model=self.model, acquisition_function=self.acquisition_function,
-            optimizer=self.optimizer,
-            maxf=kwargs.pop("maxf", 100), **kwargs)
+        self.kwargs = kwargs
 
     def init(self, dimension):
         self.dimension = dimension
@@ -118,6 +109,18 @@ class BOPSOptimizer(Optimizer):
             self.boundaries = np.array(self.boundaries)
         else:
             raise Exception("Boundaries not specified for all dimensions")
+
+        if self.bo_type == "bo":
+            BoClass = BayesianOptimizer
+        elif self.bo_type == "rembo":
+            BoClass = REMBOOptimizer
+        elif self.bo_type == "interleaved_rembo":
+            BoClass = InterleavedREMBOOptimizer
+        self.bayes_opt = BoClass(
+            model=self.model, acquisition_function=self.acquisition_function,
+            optimizer=self.optimizer, n_dims=self.dimension,
+            data_space=self.boundaries, maxf=self.kwargs.pop("maxf", 100),
+            **self.kwargs)
 
     def get_next_parameters(self, params, explore=True):
         """Return parameter vector that shall be evaluated next.

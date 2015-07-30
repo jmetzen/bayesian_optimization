@@ -61,7 +61,8 @@ class BayesianOptimizer(object):
         Seed for the random number generator.
     """
     def __init__(self, model, acquisition_function, optimizer="direct",
-                 maxf=1000, initial_random_samples=5, random_state=0):
+                 maxf=1000, initial_random_samples=5, random_state=0,
+                 *args, **kwargs):
         self.model = model
         self.acquisition_function = acquisition_function
         self.optimizer = optimizer

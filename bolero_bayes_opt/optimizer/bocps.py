@@ -8,8 +8,8 @@ from bolero.optimizer import ContextualOptimizer
 from bolero.representation.ul_policies import BoundedScalingPolicy
 from bolero.utils.validation import check_feedback, check_random_state
 
-from bayesian_optimization import (BayesianOptimizer, GaussianProcessModel,
-    create_acquisition_function)
+from bayesian_optimization import (REMBOOptimizer, InterleavedREMBOOptimizer,
+    BayesianOptimizer, GaussianProcessModel, create_acquisition_function)
 
 from ..representation.ul_policies \
     import model_free_policy_training, model_based_policy_training
@@ -22,6 +22,12 @@ class BOCPSOptimizer(ContextualOptimizer):
     ----------
     boundaries : list of pair of floats
         The boundaries of the parameter space in which the optimum is searched.
+
+    bo_type: str, default: "bo"
+        The type of Bayesian optimization performed. Can be "bo" for standard
+        Bayesian optimization, "rembo" for REMBO, or "interleaved_rembo" for
+        several interleaved runs of REMBO. Note that REMBO-based optimizers
+        only embed the parameter dimensions and not the context dimensions
 
     acquisition_function : string, optional (default: 'ucb')
         String identifying the acquisition function to be used. Supported are
@@ -47,11 +53,6 @@ class BOCPSOptimizer(ContextualOptimizer):
         * "cmaes": Using CMA-ES
         * "cmaes+lbfgs": Using CMA-ES with subsequent L-BFGS
 
-    optimizer_kwargs: dict, optional (default: {})
-        Optional keyword arguments passed to optimize function. Currently
-        supported is maxf (an integer, default=100), which determines the
-        maximum number of function evaluations
-
     acq_fct_kwargs: dict, optional (default: {})
         Optional keyword arguments passed to acquisition function. Currently
         supported is kappa (a float >= 0.0, default=0.0), which handles
@@ -71,11 +72,10 @@ class BOCPSOptimizer(ContextualOptimizer):
     random_state : RandomState or int (default: None)
         Seed for the random number generator.
     """
-    def __init__(self, boundaries, acquisition_function="ucb",
-                 policy=None, optimizer="direct+lbfgs", optimizer_kwargs={},
+    def __init__(self, boundaries, bo_type="bo", acquisition_function="ucb",
+                 policy=None, optimizer="direct+lbfgs",
                  acq_fct_kwargs={}, gp_kwargs={},
-                 value_transform=lambda x: x,
-                 approx_grad=True, random_state=None,
+                 value_transform=lambda x: x, random_state=None,
                  *args, **kwargs):
         assert isinstance(boundaries, list), \
             "Boundaries must be passed as a list of tuples (pairs)."
@@ -83,6 +83,7 @@ class BOCPSOptimizer(ContextualOptimizer):
             "%s acquisition function not yet supported." % acquisition_function
 
         self.boundaries = boundaries
+        self.bo_type = bo_type
         self.value_transform = value_transform
         if isinstance(self.value_transform, basestring):
             self.value_transform = eval(self.value_transform)
@@ -108,11 +109,7 @@ class BOCPSOptimizer(ContextualOptimizer):
         self.acquisition_function = \
             create_acquisition_function(acquisition_function, self.model,
                                         **acq_fct_kwargs)
-
-        self.bayes_opt = BayesianOptimizer(
-            model=self.model, acquisition_function=self.acquisition_function,
-            optimizer=self.optimizer,
-            maxf=optimizer_kwargs.get("maxf", 100))
+        self.kwargs = kwargs
 
     def init(self, n_params, n_context_dims):
         self.dimension = n_params
@@ -124,6 +121,21 @@ class BOCPSOptimizer(ContextualOptimizer):
             self.boundaries = np.array(self.boundaries)
         else:
             raise Exception("Boundaries not specified for all dimensions")
+
+        if self.bo_type == "bo":
+            BoClass = BayesianOptimizer
+        elif self.bo_type == "rembo":
+            BoClass = REMBOOptimizer
+        elif self.bo_type == "interleaved_rembo":
+            BoClass = InterleavedREMBOOptimizer
+        else:
+            raise Exception("Unknown bo_type %s" % self.bo_type)
+        self.bayes_opt = BoClass(
+            model=self.model, acquisition_function=self.acquisition_function,
+            optimizer=self.optimizer, n_dims=self.dimension + self.context_dims,
+            data_space=self.boundaries, n_keep_dims=self.context_dims,
+            maxf=self.kwargs.pop("maxf", 100), random_state=self.rng,
+            **self.kwargs)
 
     def set_context(self, context):
         """ Set context of next evaluation"""

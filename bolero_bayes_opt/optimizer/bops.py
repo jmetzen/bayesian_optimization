@@ -116,11 +116,13 @@ class BOPSOptimizer(Optimizer):
             BoClass = REMBOOptimizer
         elif self.bo_type == "interleaved_rembo":
             BoClass = InterleavedREMBOOptimizer
+        else:
+            raise Exception("Unknown bo_type %s" % self.bo_type)
         self.bayes_opt = BoClass(
             model=self.model, acquisition_function=self.acquisition_function,
             optimizer=self.optimizer, n_dims=self.dimension,
             data_space=self.boundaries, maxf=self.kwargs.pop("maxf", 100),
-            **self.kwargs)
+            random_state=self.rng, **self.kwargs)
 
     def get_next_parameters(self, params, explore=True):
         """Return parameter vector that shall be evaluated next.

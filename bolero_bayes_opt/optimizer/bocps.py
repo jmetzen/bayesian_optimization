@@ -72,7 +72,7 @@ class BOCPSOptimizer(ContextualOptimizer):
     random_state : RandomState or int (default: None)
         Seed for the random number generator.
     """
-    def __init__(self, boundaries, bo_type="bo", acquisition_function="ucb",
+    def __init__(self, boundaries, bo_type="bo", acquisition_function="UCB",
                  policy=None, optimizer="direct+lbfgs",
                  acq_fct_kwargs={}, gp_kwargs={},
                  value_transform=lambda x: x, random_state=None,
@@ -242,7 +242,7 @@ class BOCPSOptimizer(ContextualOptimizer):
     def _determine_next_query_point(self, context, optimizer):
         # Prepend fixed context to search space
         cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
-        cx_boundaries[:self.context_dims] = context
+        cx_boundaries[:self.context_dims] = context[:, np.newaxis]
         cx_boundaries[self.context_dims:] = self.boundaries
 
         # Determine optimal parameters for fixed context

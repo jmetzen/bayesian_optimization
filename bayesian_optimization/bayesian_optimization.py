@@ -117,11 +117,11 @@ class BayesianOptimizer(object):
         self.y_.append(y)
         self.model.fit(self.X_, self.y_)
 
-    def best_params():
+    def best_params(self):
         """ Returns the best parameters found so far."""
         return self.X_[np.argmax(self.y_)]
 
-    def best_value():
+    def best_value(self):
         """ Returns the optimal value found so far."""
         return np.max(self.y_)
 

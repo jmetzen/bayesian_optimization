@@ -243,16 +243,9 @@ class ACEPS(object):
         self.policy.fit(contexts,
                         [self.param_bounds.mean(1)]*contexts.shape[0],
                         weights=np.ones(contexts.shape[0]))
-        # XXX:
-        """
         self.policy = model_based_policy_training_pretrained(
             policy=self.policy, model=self.model.gp,
             contexts=contexts, boundaries=self.param_bounds)
-        """
-        self.policy = model_free_policy_training(
-            policy=self.policy, contexts=contexts,
-            parameters=self.model.gp.X_train_[:, self.n_context_dims:],
-            returns=self.model.gp.y_train_, epsilon=1.0, min_eta=1e-6)
 
         # Draw context samples, let policy select parameters for these context
         # (with exploration), and sample multiple possible outcomes for these

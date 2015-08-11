@@ -81,7 +81,7 @@ class ACEPSOptimizer(BOCPSOptimizer):
                 self._determine_contextparams(self.bayes_opt)
         else:
             # Choose context randomly and only choose next parameters
-            self.context = self.random.uniform(size=self.context_dims) \
+            self.context = self.rng.uniform(size=self.context_dims) \
                 * (self.context_boundaries[:, 1]
                     - self.context_boundaries[:, 0]) \
                 + self.context_boundaries[:, 0]

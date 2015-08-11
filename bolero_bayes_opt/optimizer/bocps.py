@@ -77,10 +77,9 @@ class BOCPSOptimizer(ContextualOptimizer):
                  acq_fct_kwargs={}, gp_kwargs={},
                  value_transform=lambda x: x, random_state=None,
                  *args, **kwargs):
-        assert isinstance(boundaries, list), \
-            "Boundaries must be passed as a list of tuples (pairs)."
-        assert acquisition_function in ["UCB", "GREEDY"], \
-            "%s acquisition function not yet supported." % acquisition_function
+        if not isinstance(boundaries, list):
+            raise ValueError("Boundaries must be passed as a list of tuples "
+                             "(pairs).")
 
         self.boundaries = boundaries
         self.bo_type = bo_type
@@ -90,30 +89,30 @@ class BOCPSOptimizer(ContextualOptimizer):
         self.optimizer = optimizer
 
         self.acquisition_function = acquisition_function
+        self.acq_fct_kwargs = acq_fct_kwargs
         self.gp_kwargs = gp_kwargs
 
         self.policy = policy
-        if self.policy is not None:  # Bound policy to allowed parameter space
-            self.policy = \
-                BoundedScalingPolicy(self.policy,
-                                     scaling="auto",
-                                     bounds=np.array(self.boundaries))
-            self.policy_fitted = False
-
         self.rng = check_random_state(random_state)
 
-        # Create surrogate model, acquisition function and Bayesian optimizer
-        self.model = \
-            GaussianProcessModel(random_state=self.rng, **gp_kwargs)
-
-        self.acquisition_function = \
-            create_acquisition_function(acquisition_function, self.model,
-                                        **acq_fct_kwargs)
         self.kwargs = kwargs
 
     def init(self, n_params, n_context_dims):
         self.dimension = n_params
         self.context_dims = n_context_dims
+
+        if self.policy is not None:  # Bound policy to allowed parameter space
+            self.policy = \
+                BoundedScalingPolicy(self.policy, scaling="none",
+                                     bounds=np.array(self.boundaries))
+            self.policy_fitted = False
+
+        # Create surrogate model, acquisition function and Bayesian optimizer
+        self.model = \
+            GaussianProcessModel(random_state=self.rng, **self.gp_kwargs)
+        self.acquisition_function = \
+            self._create_acquisition_function(
+                self.acquisition_function, self.model, **self.acq_fct_kwargs)
 
         if len(self.boundaries) == 1:
             self.boundaries = np.array(self.boundaries * self.dimension)
@@ -200,7 +199,7 @@ class BOCPSOptimizer(ContextualOptimizer):
             X = np.asarray(self.bayes_opt.X_)
             contexts = X[:, :self.context_dims]
             parameters = X[:, self.context_dims:]
-            returns = self.bayes_opt.y_
+            returns = np.asarray(self.bayes_opt.y_)
             # Perform training
             if "model-free" in training:
                 self.policy = model_free_policy_training(
@@ -248,6 +247,13 @@ class BOCPSOptimizer(ContextualOptimizer):
         # Determine optimal parameters for fixed context
         cx = optimizer.select_query_point(cx_boundaries)
         return cx[self.context_dims:]
+
+    def _create_acquisition_function(self, name, model, **kwargs):
+        if not name in ["UCB", "GREEDY"]:
+            raise ValueError("%s acquisition function not supported."
+                             % acquisition_function)
+
+        return create_acquisition_function(name, model, **kwargs)
 
     def __getstate__(self):
         """ Return a pickable state for this object """

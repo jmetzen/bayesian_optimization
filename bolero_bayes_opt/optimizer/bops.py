@@ -89,6 +89,10 @@ class BOPSOptimizer(Optimizer):
         self.optimizer = optimizer
 
         self.rng = check_random_state(random_state)
+        self.kwargs = kwargs
+
+    def init(self, dimension):
+        self.dimension = dimension
 
         # Create surrogate model, acquisition function and Bayesian optimizer
         self.model = \
@@ -97,11 +101,6 @@ class BOPSOptimizer(Optimizer):
         self.acquisition_function = \
             create_acquisition_function(acquisition_function, self.model,
                                         **acq_fct_kwargs)
-
-        self.kwargs = kwargs
-
-    def init(self, dimension):
-        self.dimension = dimension
 
         if len(self.boundaries) == 1:
             self.boundaries = np.array(self.boundaries * self.dimension)

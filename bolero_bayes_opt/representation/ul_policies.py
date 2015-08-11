@@ -116,7 +116,7 @@ class KernelRegressionPolicy(UpperLevelPolicy):
         else:
             sample_func = lambda x: self.random_state.multivariate_normal(
                 x, self.Sigma, size=[1])[0]
-            samples = np.apply_along_axis(sample_func, 1, means)
+            samples = np.apply_along_axis(sample_func, 1, means)[0]
             return samples
 
     def fit(self, X, Y, weights=None, context_transform=True):
@@ -200,9 +200,9 @@ def model_free_policy_training(policy, contexts, parameters, returns=None,
     features = np.array([policy.transform_context(c) for c in contexts])
     if returns is not None:
         returns = np.asarray(returns)
-        from optimizer.python.utils.reps import solve_dual_contextual_reps
-        d, _ = solve_dual_contextual_reps(features, returns, epsilon=epsilon,
-                                          min_eta=min_eta)
+        from bolero.optimizer.creps import solve_dual_contextual_reps
+        d, _, _ = solve_dual_contextual_reps(
+            features, returns, epsilon=epsilon, min_eta=min_eta)
     else:
         d = np.ones(contexts.shape[0]) / contexts.shape[0]
 
@@ -327,7 +327,8 @@ def model_based_policy_training_pretrained(
         policy.W = np.array(policy_params.reshape(policy.W.shape))
         policy.W *= scale_factor
         # Determine parameters selected by policy for given contexts
-        params = policy(contexts, explore=False)
+        params = np.array([policy(contexts[i], explore=False)
+                           for i in range(contexts.shape[0])])
         if boundaries is not None:  # check boundaries
             params = np.clip(params, boundaries[:, 0], boundaries[:, 1])
         # Compute mean output of GP model for contexts and selected params

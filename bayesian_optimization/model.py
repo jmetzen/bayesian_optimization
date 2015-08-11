@@ -3,6 +3,7 @@
 import numpy as np
 
 from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.kernel_approximation import Nystroem
 from sklearn.utils.validation import check_random_state
 
 
@@ -145,3 +146,103 @@ class GaussianProcessModel(object):
         if "gp_reestimate_hyperparams" in odict:
             odict.pop("gp_reestimate_hyperparams")
         return odict
+
+
+class ParametricModelApproximation(object):
+    """Approximate a Gaussian Process by a parametric model.
+
+    Approximating a Gaussian Process by a parametric model can be useful if
+    one has to evaluate a sample function from the GP repeatedly or on many
+    evaluation points as this would become computationally very expensive
+    with a GP.
+
+    Parameters
+    ----------
+    model : GaussianProcessRegressor
+        The Gaussian Process which is to be approximated
+
+    bounds: list of pair of floats
+        The boundaries of the data space. This is used when determining the
+        features of the parametric approximation (they are centered at random
+        points in the data space)
+
+    n_components: int
+        The number of features/parameters of the parametric model
+
+    seed: int
+        The seed of the random number generator
+    """
+    def __init__(self, model, bounds, n_components, seed):
+        self.gp = model
+        self.bounds = bounds
+        self.n_components = n_components
+        self.rng = np.random.RandomState(seed)
+
+        self.X_space = self.rng.uniform(self.bounds[:, 0], self.bounds[:, 1],
+                                        (1000, self.bounds.shape[0]))
+
+        assert self.gp.X_fit_.shape[1] == self.X_space.shape[1]
+
+        self.kernel = self.gp.kernel_
+        self.nystr = Nystroem(
+            n_components=min(self.n_components, self.X_space.shape[0]),
+            kernel='precomputed', random_state=self.rng)
+        self.nystr.fit(self.kernel(self.X_space))
+
+    def determine_coefs(self, X_query=None, y_query_samples=None, n_samples=1):
+        """ Determine coefficients of parametric model.
+
+        Simulate an evaluation at X_query with outcomes y_query_samples.
+        Determine coefficients of parametric model the updated GP.
+
+        Parameters
+        ----------
+        X_query : ndarray-like, default: None
+            The query point at which an additional evaluation is simulated.
+            If None, a parametric approximation of the unmodified GP is
+            returned.
+
+        y_query_samples: ndarray-like, default: None
+            The possible outcomes of a query at X_query.
+
+        n_samples: int
+            The number of independent samples of model coefficients from the
+            Bayesian posterior over model coefficients
+        """
+        if X_query is not None:
+            X_query = np.asarray(X_query)
+            X_queried = np.vstack((self.gp.X_fit_, X_query))
+        else:
+            X_queried = self.gp.X_fit_
+            y_queried = self.gp.y_fit_
+
+        Phi = self.nystr.transform(self.kernel(self.X_space, X_queried))
+        A = Phi.T.dot(Phi) + self.gp.sigma_squared_n * np.eye(Phi.shape[1])
+        A_inv = np.linalg.inv(A)
+
+        cov = self.gp.sigma_squared_n * A_inv
+
+        coefs = \
+            np.empty((n_samples, self.n_components, y_query_samples.shape[0]))
+        for i in range(y_query_samples.shape[0]): # XXX: Vectorize
+            y_queried = np.hstack((self.gp.y_fit_, y_query_samples[i]))
+            mean = A_inv.dot(Phi.T).dot(y_queried)
+            coefs[:, :, i] = self.rng.multivariate_normal(mean, cov, n_samples)
+        return np.array(coefs)
+
+    def __call__(self, X, coefs):
+        """ Evaluate parametric model at X for the given sampled coefficients.
+
+        Parameters
+        ----------
+        X : ndarray-like
+            The points at which the parametric model is to be evaluated
+
+        coefs: ndarray-like
+            The coefficients of the parametric model.
+        """
+        X = np.atleast_2d(X)
+
+        Phi = self.nystr.transform(self.kernel(self.X_space, X))
+        f = Phi.dot(coefs)
+        return f

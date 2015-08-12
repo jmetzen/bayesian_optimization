@@ -19,7 +19,7 @@ class GaussianProcessModel(object):
         passed, the kernel "1.0 * RBF(1.0)" is used as default. Note that
         the kernel's hyperparameters are optimized during fitting.
 
-    sigma_squared_n : float or array-like, optional (default: 1e-10)
+    alpha : float or array-like, optional (default: 1e-10)
         Value added to the diagonal of the kernel matrix during fitting.
         Larger values correspond to increased noise level in the observations
         and reduce potential numerical issue during fitting. If an array is
@@ -79,13 +79,13 @@ class GaussianProcessModel(object):
     random_state : optional, int
         Seed for the random number generator.
     """
-    def __init__(self, kernel=None, sigma_squared_n=1e-10,
+    def __init__(self, kernel=None, alpha=1e-10,
                  optimizer="fmin_l_bfgs_b", n_restarts_optimizer=1,
                  normalize_y=False,
                  reestimate_hyperparams=None, bayesian_gp=False,
                  random_state=None):
         self.kernel_ = kernel
-        self.sigma_squared_n = sigma_squared_n
+        self.alpha = alpha
         self.optimizer = optimizer
         self.n_restarts_optimizer = n_restarts_optimizer
         self.normalize_y = normalize_y
@@ -123,13 +123,13 @@ class GaussianProcessModel(object):
         # Decide whether to perform hyperparameter-optimization of GP
         if self.gp_reestimate_hyperparams(training_size):
             gp = GaussianProcessRegressor(
-                kernel=self.kernel_, sigma_squared_n=self.sigma_squared_n,
+                kernel=self.kernel_, alpha=self.alpha,
                 optimizer=self.optimizer,
                 n_restarts_optimizer=self.n_restarts_optimizer,
                 normalize_y=self.normalize_y, random_state=self.random)
         else:
             gp = GaussianProcessRegressor(
-                kernel=self.kernel_, sigma_squared_n=self.sigma_squared_n,
+                kernel=self.kernel_, alpha=self.alpha,
                 optimizer=None,  # do not modify kernel's hyperparameters
                 n_restarts_optimizer=self.n_restarts_optimizer,
                 normalize_y=self.normalize_y, random_state=self.random)
@@ -217,10 +217,10 @@ class ParametricModelApproximation(object):
             y_queried = self.gp.y_fit_
 
         Phi = self.nystr.transform(self.kernel(self.X_space, X_queried))
-        A = Phi.T.dot(Phi) + self.gp.sigma_squared_n * np.eye(Phi.shape[1])
+        A = Phi.T.dot(Phi) + self.gp.alpha * np.eye(Phi.shape[1])
         A_inv = np.linalg.inv(A)
 
-        cov = self.gp.sigma_squared_n * A_inv
+        cov = self.gp.alpha * A_inv
 
         coefs = \
             np.empty((n_samples, self.n_components, y_query_samples.shape[0]))

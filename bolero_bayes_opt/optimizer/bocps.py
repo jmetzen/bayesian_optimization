@@ -171,7 +171,7 @@ class BOCPSOptimizer(ContextualOptimizer):
             self.policy_fitted = False
 
     def best_policy(self, maxfun=50000, variance=0.01,
-                    training=["model-free", "model-based"]):
+                    training=["model-free", "model_based"]):
         """Returns the best (greedy) policy learned so far.
 
         Parameters
@@ -249,7 +249,7 @@ class BOCPSOptimizer(ContextualOptimizer):
         return cx[self.context_dims:]
 
     def _create_acquisition_function(self, name, model, **kwargs):
-        if not name in ["UCB", "GREEDY"]:
+        if not name in ["UCB", "GREEDY", "RANDOM"]:
             raise ValueError("%s acquisition function not supported."
                              % acquisition_function)
 

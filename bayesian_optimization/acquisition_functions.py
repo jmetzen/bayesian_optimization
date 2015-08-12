@@ -124,15 +124,11 @@ class UpperConfidenceBound(object):
         incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning. Defaults to 0.
-        compute_gradient: bool
-            Whether the gradient at position x will be evaluated and returned.
 
         Returns
         -------
         ucb: float
             the upper confidence point of performance at query point x.
-        gradient: array-like, optional (if compute_gradient is True)
-            The gradient of the upper confidence bound at position x.
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
@@ -158,11 +154,36 @@ class Greedy(UpperConfidenceBound):
         super(Greedy, self).__init__(model, kappa=0)
 
 
+class Random(object):
+    """ The random acquisition function. """
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, x, incumbent=0, *args, **kwargs):
+        """ Returns a random acquisition value independent of query point x.
+
+        Parameters
+        ----------
+        x: array-like
+            The position at which the upper confidence bound will be evaluated.
+        incumbent: float
+            Baseline value, typically the maximum (actual) return observed
+            so far during learning. Defaults to 0.
+
+        Returns
+        -------
+        random: float
+            a random value independent of actual query point x.
+        """
+        return np.random.random()
+
+
 ACQUISITION_FUNCTIONS = {
     "PI": ProbabilityOfImprovement,
     "EI": ExpectedImprovement,
     "UCB": UpperConfidenceBound,
-    "GREEDY": Greedy}
+    "GREEDY": Greedy,
+    "RANDOM": Random}
 
 
 def create_acquisition_function(name, model, **kwargs):

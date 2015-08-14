@@ -251,7 +251,7 @@ class BOCPSOptimizer(ContextualOptimizer):
     def _create_acquisition_function(self, name, model, **kwargs):
         if not name in ["UCB", "GREEDY", "RANDOM"]:
             raise ValueError("%s acquisition function not supported."
-                             % acquisition_function)
+                             % name)
 
         return create_acquisition_function(name, model, **kwargs)
 

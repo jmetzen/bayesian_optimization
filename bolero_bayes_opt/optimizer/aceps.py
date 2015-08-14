@@ -20,10 +20,6 @@ class ACEPSOptimizer(BOCPSOptimizer):
     Behaves like ContextualBayesianOptimizer but is additionally also able to
     actively select the context for the next trial.
 
-    Note: The parameter "acquisition_function" is ignored in ACEPSOptimizer
-          since ACEPSOptimizer can only be used with the ACEPS acquisition
-          function.
-
     Parameters
     ----------
     policy : UpperLevelPolicy-object
@@ -36,6 +32,11 @@ class ACEPSOptimizer(BOCPSOptimizer):
         The boundaries of the context space in which the best context for the
         next trial is searched
 
+    n_query_points : int, default: 100
+        The number of candidate query points (context-parameter pairs) which
+        are determined by the base acquisition function and evaluated using
+        ACEPS
+
     active : bool
         Whether the context for the next trial is actively selected. This might
         improve the performance in tasks where a uniform selection of contexts
@@ -44,10 +45,11 @@ class ACEPSOptimizer(BOCPSOptimizer):
 
     For further parameters, we refer to the doc of ContextualBayesianOptimizer.
     """
-    def __init__(self, policy, context_boundaries, active=True, **kwargs):
-        kwargs["acquisition_function"] = "aceps"
+    def __init__(self, policy, context_boundaries, n_query_points=100,
+                 active=True, **kwargs):
         super(ACEPSOptimizer, self).__init__(policy=policy, **kwargs)
         self.context_boundaries = context_boundaries
+        self.n_query_points = n_query_points
         self.active = active
 
         if self.policy is None:
@@ -85,7 +87,12 @@ class ACEPSOptimizer(BOCPSOptimizer):
                 * (self.context_boundaries[:, 1]
                     - self.context_boundaries[:, 0]) \
                 + self.context_boundaries[:, 0]
-            self.parameters = self._determine_params(self.context, self.bayes_opt)
+            # Repeat context self.n_query_points times, s.t. ACEPS can only
+            # select parameters for this context
+            contexts = np.repeat(self.context, self.n_query_points)
+            contexts = contexts.reshape(-1, self.n_query_points).T
+            _, self.parameters = \
+                self._determine_contextparams(self.bayes_opt, contexts)
         # Return only context, the parameters are later returned in
         # get_next_parameters
         return self.context
@@ -109,34 +116,40 @@ class ACEPSOptimizer(BOCPSOptimizer):
         # the context in get_desired_context()
         params[:] = self.parameters
 
-    def _determine_params(self, context, optimizer):
-        # Prepend fixed context to search space
-        cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
-        cx_boundaries[:self.context_dims] = context[:, np.newaxis]
-        cx_boundaries[self.context_dims:] = self.boundaries
+    def _determine_contextparams(self, optimizer, context_samples=None):
+        """Select context and params jointly using ACEPS."""
+        if context_samples is None:
+            # Select self.n_query_points possible contexts for the rollout
+            # randomly
+            context_samples = \
+                self.rng.uniform(self.context_boundaries[:, 0],
+                                 self.context_boundaries[:, 1],
+                                 (self.n_query_points, self.context_dims))
+        # Let the base-acquisition function select parameters for these
+        # contexts
+        selected_params = np.empty((context_samples.shape[0], self.dimension))
+        for i in range(context_samples.shape[0]):
+            selected_params[i] = \
+                self._determine_next_query_point(context_samples[i], optimizer)
 
-        # Determine optimal parameters for fixed context
-        cx = optimizer.select_query_point(cx_boundaries)
-        return cx[self.context_dims:]
+        # We cannot evaluate query points without having seen at least two
+        # datapoints. We thus select a random query point
+        if self.model.last_training_size < 2:
+            rand_ind = np.random.choice(context_samples.shape[0])
+            return context_samples[rand_ind], selected_params[rand_ind]
 
-    def _determine_contextparams(self, optimizer):
-        # Optimize context and params jointly
+        # Determine for every of the possible context-parameter pairs their
+        # ACEPS score and select the one with maximal score
         cx_boundaries = np.vstack((self.context_boundaries, self.boundaries))
-        cx = optimizer.select_query_point(cx_boundaries)
+        aceps = ACEPS(self.model, self.policy, cx_boundaries,
+                      n_context_dims=self.context_dims)
+        aceps_performance = np.empty(context_samples.shape[0])
+        for i in range(context_samples.shape[0]):
+            aceps_performance[i] = \
+                aceps(np.hstack((context_samples[i], selected_params[i])))
+        opt_ind = np.argmax(aceps_performance)
 
-        context = cx[:self.context_dims]
-        params = cx[self.context_dims:]
-
-        return context, params
-
-    def _create_acquisition_function(self, name, model, **kwargs):
-        # Determine boundaries
-        cx_boundaries = np.vstack((self.context_boundaries, self.boundaries))
-
-        acq_function = \
-            ACEPS(self.model, self.policy, cx_boundaries,  # XXX: self.model.gp
-                  n_context_dims=self.context_dims, **kwargs)
-        return acq_function
+        return context_samples[opt_ind], selected_params[opt_ind]
 
 
 class ACEPS(object):
@@ -186,7 +199,8 @@ class ACEPS(object):
     """
     def __init__(self, model, policy, bounds, n_context_dims,
                  n_context_samples=20, n_policy_samples=20, n_gp_samples=1000,
-                 n_samples_y=10, use_finite_parameterization=False, seed=None):
+                 n_samples_y=10, policy_training="model-free",
+                 use_finite_parameterization=False, seed=None):
         self.model = model
         self.policy = deepcopy(policy)  # XXX
         self.bounds = bounds
@@ -199,6 +213,7 @@ class ACEPS(object):
         self.n_policy_samples = n_policy_samples
         self.n_gp_samples = n_gp_samples
         self.n_samples_y = n_samples_y
+        self.policy_training = policy_training
         self.use_finite_parameterization = use_finite_parameterization
 
         self.rng = np.random.RandomState(seed)
@@ -209,27 +224,21 @@ class ACEPS(object):
                              self.context_bounds[:, 1],
                              (self.n_context_samples, n_context_dims))
 
-        self.n_seen_datapoints = 0
+        # Select parameters that policy samples would choose at context samples
+        self.selected_params = self._sample_policy_parameters()
 
-    def _update(self):
-        if self.model.last_training_size > self.n_seen_datapoints:
-            # Select parameters that policy samples would choose at context samples
-            self.selected_params = self._sample_policy_parameters()
+        # Create array of evaluation points (context samples, policy parameters)
+        self.eval_points = \
+            np.hstack((np.tile(self.context_samples, (self.n_policy_samples, 1)),
+                       self.selected_params.reshape(-1, self.n_param_dims)))
 
-            # Create array of evaluation points (context samples, policy parameters)
-            self.eval_points = \
-                np.hstack((np.tile(self.context_samples, (self.n_policy_samples, 1)),
-                           self.selected_params.reshape(-1, self.n_param_dims)))
-
-            if self.use_finite_parameterization:
-                self.pma = \
-                    ParametricModelApproximation(self.model.gp, self.bounds, 100, 0)  # XXX
-            else:
-                # Compute mean and covariance of GP model over the evaluation points
-                self.y_mean, self.y_cov = \
-                    self.model.gp.predict(self.eval_points, return_cov=True)
-
-            self.n_seen_datapoints = self.model.last_training_size
+        if self.use_finite_parameterization:
+            self.pma = \
+                ParametricModelApproximation(self.model.gp, self.bounds, 100, 0)  # XXX
+        else:
+            # Compute mean and covariance of GP model over the evaluation points
+            self.y_mean, self.y_cov = \
+                self.model.gp.predict(self.eval_points, return_cov=True)
 
     def _sample_policy_parameters(self):
         """ Sample close-to-optimal policies and let them select parameters.
@@ -240,12 +249,21 @@ class ACEPS(object):
         """
         # Compute policy which is close to optimal according to current model
         contexts = self.model.gp.X_train_[:, :self.n_context_dims]
-        self.policy.fit(contexts,
-                        [self.param_bounds.mean(1)]*contexts.shape[0],
-                        weights=np.ones(contexts.shape[0]))
-        self.policy = model_based_policy_training_pretrained(
-            policy=self.policy, model=self.model.gp,
-            contexts=contexts, boundaries=self.param_bounds)
+        parameters = self.model.gp.X_train_[:, self.n_context_dims:]
+        returns = self.model.gp.y_train_
+        if self.policy_training == "model-free":
+            self.policy = model_free_policy_training(
+                        self.policy, contexts, parameters, returns,
+                        epsilon=1.0, min_eta=1e-6)
+        elif self.policy_training == "model-based":
+            self.policy.fit(contexts,
+                            [self.param_bounds.mean(1)]*contexts.shape[0],
+                            weights=np.ones(contexts.shape[0]))
+            self.policy = model_based_policy_training_pretrained(
+                policy=self.policy, model=self.model.gp,
+                contexts=contexts, boundaries=self.param_bounds)
+        else:
+            raise NotImplementedError()
 
         # Draw context samples, let policy select parameters for these context
         # (with exploration), and sample multiple possible outcomes for these
@@ -290,8 +308,6 @@ class ACEPS(object):
         return selected_params
 
     def __call__(self, X_query, *args, **kwargs):
-        self._update()  # XXX
-
         X_query = np.atleast_2d(X_query)
 
         if self.use_finite_parameterization:
@@ -336,7 +352,7 @@ class ACEPS(object):
         # Adapt samples for different possible values of y at X_query
         # according to predictive distribution of GP at X_query
         percent_points = norm.ppf(np.linspace(0.05, 0.95, self.n_samples_y))
-        y_delta = np.sqrt(y_cov_query_self + self.model.gp.sigma_squared_n)[:, 0] \
+        y_delta = np.sqrt(y_cov_query_self + self.model.gp.alpha)[:, 0] \
             * percent_points
         y_mean_delta = (y_cov_query_cross / y_cov_query_self) * y_delta
 

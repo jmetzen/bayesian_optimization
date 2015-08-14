@@ -89,7 +89,7 @@ class KernelRegressionPolicy(UpperLevelPolicy):
 
         self.random_state = check_random_state(random_state)
 
-    def __call__(self, contexts, explore=True):
+    def __call__(self, context, explore=True):
         """Evaluates policy for given contexts.
 
         Samples weight vector from distribution if explore is true, otherwise
@@ -104,19 +104,19 @@ class KernelRegressionPolicy(UpperLevelPolicy):
             if true, weight vector is sampled from distribution. otherwise the
             distribution's mean is returned
         """
-        X = self.nystroem.transform(contexts)
+        X = self.nystroem.transform(context)
         if self.bias:
             X = np.hstack((X, np.ones((X.shape[0], 1))))
         if self.normalize:
             X /= np.abs(X).sum(1)[:, None]
 
-        means = np.dot(X, self.W.T)
+        mean = np.dot(X, self.W.T)
         if not explore:
-            return means
+            return mean[0]
         else:
             sample_func = lambda x: self.random_state.multivariate_normal(
                 x, self.Sigma, size=[1])[0]
-            samples = np.apply_along_axis(sample_func, 1, means)[0]
+            samples = np.apply_along_axis(sample_func, 1, mean)[0]
             return samples
 
     def fit(self, X, Y, weights=None, context_transform=True):

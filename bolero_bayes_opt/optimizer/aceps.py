@@ -46,11 +46,12 @@ class ACEPSOptimizer(BOCPSOptimizer):
     For further parameters, we refer to the doc of ContextualBayesianOptimizer.
     """
     def __init__(self, policy, context_boundaries, n_query_points=100,
-                 active=True, **kwargs):
+                 active=True, aceps_params=None, **kwargs):
         super(ACEPSOptimizer, self).__init__(policy=policy, **kwargs)
         self.context_boundaries = context_boundaries
         self.n_query_points = n_query_points
         self.active = active
+        self.aceps_params = aceps_params if aceps_params is not None else {}
 
         if self.policy is None:
             raise ValueError("The policy in ACEPS must not be None.")
@@ -142,7 +143,7 @@ class ACEPSOptimizer(BOCPSOptimizer):
         # ACEPS score and select the one with maximal score
         cx_boundaries = np.vstack((self.context_boundaries, self.boundaries))
         aceps = ACEPS(self.model, self.policy, cx_boundaries,
-                      n_context_dims=self.context_dims)
+                      n_context_dims=self.context_dims, **self.aceps_params)
         aceps_performance = np.empty(context_samples.shape[0])
         for i in range(context_samples.shape[0]):
             aceps_performance[i] = \

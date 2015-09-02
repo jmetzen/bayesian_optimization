@@ -2,7 +2,7 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, entropy
 from scipy.special import erf
 
 
@@ -178,12 +178,98 @@ class Random(object):
         return np.random.random()
 
 
+class EntropySearch(object):
+    """
+    """
+    def __init__(self, model, n_sample_points=20, n_gp_samples=500,
+                 n_samples_y=10):
+        self.model = model
+        self.n_sample_points = n_sample_points
+        self.n_gp_samples = n_gp_samples
+        self.n_samples_y =  n_samples_y
+
+        self.last_training_size = self.model.last_training_size
+
+        equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
+        self.percent_points = norm.ppf(equidistant_grid)
+
+    def __call__(self, x, incumbent=0, *args, **kwargs):
+        """ Returns the upper confidence bound at query point x.
+
+        Parameters
+        ----------
+        x: array-like
+            The position at which the upper confidence bound will be evaluated.
+        incumbent: float
+            Baseline value, typically the maximum (actual) return observed
+            so far during learning. Defaults to 0.
+
+        Returns
+        -------
+        ucb: float
+            the upper confidence point of performance at query point x.
+        """
+        if self.last_training_size < self.model.last_training_size:
+            self._update_sample_points()
+            self.last_training_size = self.model.last_training_size
+
+        x = np.atleast_2d(x)
+
+        a_ES = np.empty((x.shape[0], self.n_samples_y))
+
+        X_joint = np.vstack((self.X_samples, x))
+
+        f_mean_all, f_cov_all = \
+            self.model.gp.predict(np.atleast_2d(X_joint), return_cov=True)
+        f_mean = f_mean_all[:self.n_sample_points]
+        f_cov = f_cov_all[:self.n_sample_points, :self.n_sample_points]
+
+        # base entropy
+        f_samples = np.random.multivariate_normal(f_mean, f_cov,
+                                                  self.n_gp_samples).T
+        p_max = np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0]) \
+            / float(self.n_gp_samples)
+        base_entropy = entropy(p_max)
+
+        # XXX: Vectorize
+        for i in range(self.n_sample_points, self.n_sample_points+x.shape[0]):
+            f_cov_query = f_cov_all[[i]][:, [i]]
+            f_cov_query_inv = np.linalg.inv(f_cov_query)
+            f_cov_delta = -f_cov_all[:self.n_sample_points, [i]].dot(f_cov_query_inv).dot(f_cov_all[[i], :self.n_sample_points])
+
+            # precompute samples for non-modified mean
+            f_cov_mod = f_cov + f_cov_delta
+            f_samples = np.random.multivariate_normal(f_mean, f_cov_mod,
+                                                      self.n_gp_samples).T
+
+            for j in range(self.n_samples_y):  # sample outcomes
+                y_delta = np.sqrt(f_cov_query + self.model.gp.alpha)[:, 0] \
+                    * self.percent_points[j]
+                f_mean_delta = f_cov_all[:self.n_sample_points, [i]].dot(f_cov_query_inv).dot(y_delta)
+
+                f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
+                p_max = np.bincount(np.argmax(f_samples_j, 0), minlength=f_mean.shape[0]) \
+                    / float(self.n_gp_samples)
+                a_ES[i - self.n_sample_points, j] = base_entropy - entropy(p_max)
+
+        return a_ES.mean(1)
+
+    def _update_sample_points(self):
+        self.X_samples = np.empty((self.n_sample_points, 1))
+        for i in range(self.n_sample_points):
+            # XXX: bounds, n_candidates
+            candidates = np.random.uniform(-1, 1, 500)[:, None]
+            y_samples = self.model.gp.sample_y(candidates)
+            self.X_samples[i] = candidates[np.argmax(y_samples)]
+
+
 ACQUISITION_FUNCTIONS = {
     "PI": ProbabilityOfImprovement,
     "EI": ExpectedImprovement,
     "UCB": UpperConfidenceBound,
     "GREEDY": Greedy,
-    "RANDOM": Random}
+    "RANDOM": Random,
+    "EntropySearch": EntropySearch}
 
 
 def create_acquisition_function(name, model, **kwargs):

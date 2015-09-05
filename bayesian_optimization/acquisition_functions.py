@@ -6,7 +6,13 @@ from scipy.stats import norm, entropy
 from scipy.special import erf
 
 
-class ProbabilityOfImprovement(object):
+class AcquisitionFunction(object):
+
+    def set_boundaries(self, boundaries):
+        pass
+
+
+class ProbabilityOfImprovement(AcquisitionFunction):
     """The "Probability of Improvement" (PI) acquisition function.
 
     Parameters
@@ -50,7 +56,7 @@ class ProbabilityOfImprovement(object):
         return pi
 
 
-class ExpectedImprovement(object):
+class ExpectedImprovement(AcquisitionFunction):
     """ The "Expected Improvement" (EI) acquisition function.
 
     Parameters
@@ -98,7 +104,7 @@ class ExpectedImprovement(object):
         return ei
 
 
-class UpperConfidenceBound(object):
+class UpperConfidenceBound(AcquisitionFunction):
     """ The "Upper Confidence Bound" (UCB) acquisition function.
 
     Parameters
@@ -154,7 +160,7 @@ class Greedy(UpperConfidenceBound):
         super(Greedy, self).__init__(model, kappa=0)
 
 
-class Random(object):
+class Random(AcquisitionFunction):
     """ The random acquisition function. """
     def __init__(self, *args, **kwargs):
         pass
@@ -178,7 +184,7 @@ class Random(object):
         return np.random.random()
 
 
-class EntropySearch(object):
+class EntropySearch(AcquisitionFunction):
     """
     """
     def __init__(self, model, n_sample_points=20, n_gp_samples=500,
@@ -187,8 +193,6 @@ class EntropySearch(object):
         self.n_sample_points = n_sample_points
         self.n_gp_samples = n_gp_samples
         self.n_samples_y =  n_samples_y
-
-        self.last_training_size = self.model.last_training_size
 
         equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
         self.percent_points = norm.ppf(equidistant_grid)
@@ -203,16 +207,7 @@ class EntropySearch(object):
         incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning. Defaults to 0.
-
-        Returns
-        -------
-        ucb: float
-            the upper confidence point of performance at query point x.
         """
-        if self.last_training_size < self.model.last_training_size:
-            self._update_sample_points()
-            self.last_training_size = self.model.last_training_size
-
         x = np.atleast_2d(x)
 
         a_ES = np.empty((x.shape[0], self.n_samples_y))
@@ -254,11 +249,14 @@ class EntropySearch(object):
 
         return a_ES.mean(1)
 
-    def _update_sample_points(self):
-        self.X_samples = np.empty((self.n_sample_points, 1))
+    def set_boundaries(self, boundaries):
+        self.X_samples = \
+            np.empty((self.n_sample_points, boundaries.shape[0]))
         for i in range(self.n_sample_points):
-            # XXX: bounds, n_candidates
-            candidates = np.random.uniform(-1, 1, 500)[:, None]
+            # XXX: n_candidates
+            candidates = np.random.uniform(boundaries[:, 0],
+                                           boundaries[:, 1],
+                                           (500, boundaries.shape[0]))
             y_samples = self.model.gp.sample_y(candidates)
             self.X_samples[i] = candidates[np.argmax(y_samples)]
 

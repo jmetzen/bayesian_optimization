@@ -95,6 +95,8 @@ class BayesianOptimizer(object):
             X_query = self.rng.uniform(size=boundaries.shape[0]) \
                 * (boundaries[:, 1] - boundaries[:, 0]) + boundaries[:, 0]
         else:
+            self.acquisition_function.set_boundaries(boundaries)
+
             def objective_function(x):
                 # Check boundaries
                 if not np.all(np.logical_and(x >= boundaries[:, 0],

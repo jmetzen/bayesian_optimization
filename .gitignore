@@ -5,3 +5,5 @@ doc/_build
 doc/source/auto_examples
 doc/source/modules/generated
 doc/source/notebooks
+doc
+build

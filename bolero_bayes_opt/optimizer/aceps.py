@@ -7,6 +7,8 @@ from copy import deepcopy
 import numpy as np
 from scipy.stats import entropy, norm
 
+from bayesian_optimization import create_acquisition_function
+from bayesian_optimization.acquisition_functions import AcquisitionFunction
 from bayesian_optimization.model import ParametricModelApproximation
 
 from .bocps import BOCPSOptimizer
@@ -117,40 +119,22 @@ class ACEPSOptimizer(BOCPSOptimizer):
         # the context in get_desired_context()
         params[:] = self.parameters
 
-    def _determine_contextparams(self, optimizer, context_samples=None):
+    def _determine_contextparams(self, optimizer):
         """Select context and params jointly using ACEPS."""
-        if context_samples is None:
-            # Select self.n_query_points possible contexts for the rollout
-            # randomly
-            context_samples = \
-                self.rng.uniform(self.context_boundaries[:, 0],
-                                 self.context_boundaries[:, 1],
-                                 (self.n_query_points, self.context_dims))
-        # Let the base-acquisition function select parameters for these
-        # contexts
-        selected_params = np.empty((context_samples.shape[0], self.dimension))
-        for i in range(context_samples.shape[0]):
-            selected_params[i] = \
-                self._determine_next_query_point(context_samples[i], optimizer)
+        cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
+        cx_boundaries[:self.context_dims] = self.context_boundaries
+        cx_boundaries[self.context_dims:] = self.boundaries
 
-        # We cannot evaluate query points without having seen at least two
-        # datapoints. We thus select a random query point
-        if self.model.last_training_size < 2:
-            rand_ind = np.random.choice(context_samples.shape[0])
-            return context_samples[rand_ind], selected_params[rand_ind]
+        # Determine optimal parameters for fixed context
+        cx = optimizer.select_query_point(cx_boundaries)
+        return cx[:self.context_dims], cx[self.context_dims:]
 
-        # Determine for every of the possible context-parameter pairs their
-        # ACEPS score and select the one with maximal score
-        cx_boundaries = np.vstack((self.context_boundaries, self.boundaries))
-        aceps = ACEPS(self.model, self.policy, cx_boundaries,
-                      n_context_dims=self.context_dims, **self.aceps_params)
-        aceps_performance = np.empty(context_samples.shape[0])
-        for i in range(context_samples.shape[0]):
-            aceps_performance[i] = \
-                aceps(np.hstack((context_samples[i], selected_params[i])))
-        opt_ind = np.argmax(aceps_performance)
+    def _create_acquisition_function(self, name, model, **kwargs):
+        if not name in ["ContextualEntropySearch", "ACEPS"]:
+            raise ValueError("%s acquisition function not supported."
+                             % name)
 
-        return context_samples[opt_ind], selected_params[opt_ind]
+        return create_acquisition_function(name, model, **kwargs)
 
 
 class ACEPS(object):

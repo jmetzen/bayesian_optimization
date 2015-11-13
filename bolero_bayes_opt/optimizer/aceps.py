@@ -130,7 +130,8 @@ class ACEPSOptimizer(BOCPSOptimizer):
         return cx[:self.context_dims], cx[self.context_dims:]
 
     def _create_acquisition_function(self, name, model, **kwargs):
-        if not name in ["ContextualEntropySearch", "ACEPS"]:
+        if not name in ["ContextualEntropySearch",
+                        "ContextualEntropySearchLocal", "ACEPS"]:
             raise ValueError("%s acquisition function not supported."
                              % name)
 

@@ -5,6 +5,9 @@ import numpy as np
 from scipy.stats import norm, entropy
 from scipy.special import erf
 
+from sklearn.cluster import KMeans
+from sklearn.neighbors import NearestNeighbors
+
 
 class AcquisitionFunction(object):
     """ Abstract base class for acquisition functions."""
@@ -309,6 +312,32 @@ class EntropySearch(AcquisitionFunction):
         self.base_entropy = entropy(p_max)
 
 
+class ContextualEntropySearchLocal(AcquisitionFunction):
+    def __init__(self, model, n_context_dims,
+                 n_candidates=20, n_gp_samples=500,
+                 n_samples_y=10, n_trial_points=100):
+        self.model = model
+        self.n_context_dims = n_context_dims
+
+        self.n_candidates = n_candidates
+        self.n_gp_samples = n_gp_samples
+        self.n_samples_y =  n_samples_y
+        self.n_trial_points = n_trial_points
+
+    def __call__(self, x, incumbent=0, *args, **kwargs):
+        boundaries_i = np.copy(self.boundaries)
+        boundaries_i[:self.n_context_dims] = \
+            x[:self.n_context_dims, np.newaxis]
+        entropy_search_fixed_context = \
+            EntropySearch(self.model, self.n_candidates, self.n_gp_samples,
+                          self.n_samples_y, self.n_trial_points)
+        entropy_search_fixed_context.set_boundaries(boundaries_i)
+        return entropy_search_fixed_context(x)[0]
+
+    def set_boundaries(self, boundaries):
+        self.boundaries = boundaries
+
+
 class ContextualEntropySearch(AcquisitionFunction):
     """
     n_context_samples: int, default: 20
@@ -330,13 +359,22 @@ class ContextualEntropySearch(AcquisitionFunction):
     def __call__(self, x, incumbent=0, *args, **kwargs):
         ind = list(self.nbrs.kneighbors(x[:self.n_context_dims],
                                         return_distance=False)[0])
-        mean_entropy_reduction = \
-            np.mean([self.entropy_search_ensemble[i](x) for i in ind])
-        return mean_entropy_reduction
+
+        entropy_reductions = \
+            [self.entropy_search_ensemble[i](x)[0] for i in ind]
+
+        #import pylab
+        #pylab.scatter(self.context_samples[:, 0], self.context_samples[:, 1], c='b')
+        #pylab.scatter(self.context_samples[ind, 0], self.context_samples[ind, 1], c='r')
+        #pylab.scatter([x[0]], [[x[1]]], c='k')
+        #pylab.show()
+
+        return np.mean(entropy_reductions)
 
     def set_boundaries(self, boundaries):
         self._sample_contexts(boundaries[:self.n_context_dims])
 
+        # XXX: do that lazily
         self.entropy_search_ensemble = []
         for i in range(self.n_context_samples):
             boundaries_i = np.copy(boundaries)
@@ -350,15 +388,24 @@ class ContextualEntropySearch(AcquisitionFunction):
             self.entropy_search_ensemble.append(entropy_search_fixed_context)
 
     def _sample_contexts(self, context_boundaries):
+        # Determine samples at which CES will be evaluated by
+        # 1. uniform random sampling
         self.context_samples = \
             np.random.uniform(context_boundaries[:, 0],
                               context_boundaries[:, 1],
                               (self.n_context_samples*25, self.n_context_dims))
-        from sklearn.cluster import KMeans
-        from sklearn.neighbors import NearestNeighbors
-        kmeans = KMeans(n_clusters=self.n_context_samples).fit(self.context_samples)
-        self.context_samples = kmeans.cluster_centers_
-        self.nbrs = NearestNeighbors(n_neighbors=10, algorithm='ball_tree')
+        # 2. subsampling via k-means clustering
+        kmeans = KMeans(n_clusters=self.n_context_samples, n_jobs=1)
+        self.context_samples = \
+            kmeans.fit(self.context_samples).cluster_centers_
+
+        # Initialize nearest neighbors query structure which takes GP
+        # length-scales into account
+        # XXX: Kernel structure is hard-coded
+        length_scales = self.model.gp.kernel_.k1.k2.l[:self.n_context_dims]
+        self.nbrs = NearestNeighbors(
+            n_neighbors=20, algorithm='ball_tree', metric="mahalanobis",
+            metric_params={"VI": np.linalg.inv(np.diag(length_scales))})
         self.nbrs.fit(self.context_samples)
 
 
@@ -477,6 +524,7 @@ ACQUISITION_FUNCTIONS = {
     "RANDOM": Random,
     "EntropySearch": EntropySearch,
     "ContextualEntropySearch": ContextualEntropySearch,
+    "ContextualEntropySearchLocal": ContextualEntropySearchLocal,
     "ACEPS": ACEPS}
 
 

@@ -83,10 +83,13 @@ class BOPSOptimizer(Optimizer):
 
         self.boundaries = boundaries
         self.bo_type = bo_type
+        self.acquisition_function = acquisition_function
         self.value_transform = value_transform
         if isinstance(self.value_transform, basestring):
             self.value_transform = eval(self.value_transform)
         self.optimizer = optimizer
+        self.acq_fct_kwargs = acq_fct_kwargs
+        self.gp_kwargs = gp_kwargs
 
         self.rng = check_random_state(random_state)
         self.kwargs = kwargs
@@ -96,11 +99,11 @@ class BOPSOptimizer(Optimizer):
 
         # Create surrogate model, acquisition function and Bayesian optimizer
         self.model = \
-            GaussianProcessModel(random_state=self.rng, **gp_kwargs)
+            GaussianProcessModel(random_state=self.rng, **self.gp_kwargs)
 
         self.acquisition_function = \
-            create_acquisition_function(acquisition_function, self.model,
-                                        **acq_fct_kwargs)
+            create_acquisition_function(self.acquisition_function, self.model,
+                                        **self.acq_fct_kwargs)
 
         if len(self.boundaries) == 1:
             self.boundaries = np.array(self.boundaries * self.dimension)

@@ -1,11 +1,10 @@
 Installation
 ============
 
-Install our version of scikit-learn
+Install the current development version of scikit-learn (or sklearn version 0.18 once this is available)
 
-    git clone git@git.hb.dfki.de:team-learning/sklearn.git
+    git clone git@github.com:scikit-learn/scikit-learn.git
     cd sklearn
-    git checkout gp_new
     sudo python setup.py install
 
 Install `bayesian_optimization`

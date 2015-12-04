@@ -75,7 +75,7 @@ class BOPSOptimizer(Optimizer):
 
     **kwargs: Passed directly to the BayesianOptimizer
     """
-    def __init__(self, boundaries, bo_type="bo", acquisition_function="ucb",
+    def __init__(self, boundaries, bo_type="bo", acquisition_function="UCB",
                  optimizer="direct+lbfgs", acq_fct_kwargs={}, gp_kwargs={},
                  value_transform=lambda x: x, random_state=None, **kwargs):
         assert isinstance(boundaries, list), \

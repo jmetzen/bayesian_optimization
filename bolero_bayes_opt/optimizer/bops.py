@@ -78,8 +78,9 @@ class BOPSOptimizer(Optimizer):
     def __init__(self, boundaries, bo_type="bo", acquisition_function="UCB",
                  optimizer="direct+lbfgs", acq_fct_kwargs={}, gp_kwargs={},
                  value_transform=lambda x: x, random_state=None, **kwargs):
-        assert isinstance(boundaries, list), \
-            "Boundaries must be passed as a list of tuples (pairs)."
+        if not hasattr(boundaries, "__len__"):
+            raise ValueError("Boundaries must be passed as an array-like of "
+                             "tuples (pairs).")
 
         self.boundaries = boundaries
         self.bo_type = bo_type

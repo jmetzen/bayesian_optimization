@@ -48,7 +48,7 @@ class ProbabilityOfImprovement(AcquisitionFunction):
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
-        mu_x, sigma_x = self.model.predictive_distribution(x)
+        mu_x, sigma_x = self.model.predictive_distribution(np.atleast_2d(x))
 
         gamma_x = (mu_x - (incumbent + self.kappa)) / sigma_x
         pi = norm.cdf(gamma_x)
@@ -91,7 +91,7 @@ class ExpectedImprovement(AcquisitionFunction):
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
-        mu_x, sigma_x = self.model.predictive_distribution(x)
+        mu_x, sigma_x = self.model.predictive_distribution(np.atleast_2d(x))
 
         gamma_x = (mu_x - (incumbent + self.kappa)) / sigma_x
         # Compute EI based on some temporary variables that can be reused in
@@ -138,7 +138,7 @@ class UpperConfidenceBound(AcquisitionFunction):
         """
         # Determine model's predictive distribution (mean and
         # standard-deviation)
-        mu_x, sigma_x = self.model.predictive_distribution(x)
+        mu_x, sigma_x = self.model.predictive_distribution(np.atleast_2d(x))
 
         ucb = (mu_x - incumbent) + self.kappa * sigma_x
 

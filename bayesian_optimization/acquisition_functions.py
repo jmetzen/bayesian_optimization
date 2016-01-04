@@ -346,7 +346,7 @@ class ContextualEntropySearch(AcquisitionFunction):
     """
     def __init__(self, model, n_context_dims, n_context_samples,
                  n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=100):
+                 n_samples_y=10, n_trial_points=100, n_neighbors=20):
         self.model = model
         self.n_context_dims = n_context_dims
         self.n_context_samples = n_context_samples
@@ -355,19 +355,14 @@ class ContextualEntropySearch(AcquisitionFunction):
         self.n_gp_samples = n_gp_samples
         self.n_samples_y =  n_samples_y
         self.n_trial_points = n_trial_points
+        self.n_neighbors = n_neighbors
 
     def __call__(self, x, incumbent=0, *args, **kwargs):
-        ind = list(self.nbrs.kneighbors(x[:self.n_context_dims],
+        ind = list(self.nbrs.kneighbors(x[np.newaxis, :self.n_context_dims],
                                         return_distance=False)[0])
 
         entropy_reductions = \
             [self.entropy_search_ensemble[i](x)[0] for i in ind]
-
-        #import pylab
-        #pylab.scatter(self.context_samples[:, 0], self.context_samples[:, 1], c='b')
-        #pylab.scatter(self.context_samples[ind, 0], self.context_samples[ind, 1], c='r')
-        #pylab.scatter([x[0]], [[x[1]]], c='k')
-        #pylab.show()
 
         return np.mean(entropy_reductions)
 
@@ -402,9 +397,11 @@ class ContextualEntropySearch(AcquisitionFunction):
         # Initialize nearest neighbors query structure which takes GP
         # length-scales into account
         # XXX: Kernel structure is hard-coded
-        length_scales = self.model.gp.kernel_.k1.k2.l[:self.n_context_dims]
+        length_scales = \
+            self.model.gp.kernel_.k1.k2.length_scale[:self.n_context_dims]
         self.nbrs = NearestNeighbors(
-            n_neighbors=20, algorithm='ball_tree', metric="mahalanobis",
+            n_neighbors=self.n_neighbors,
+            algorithm='ball_tree', metric="mahalanobis",
             metric_params={"VI": np.linalg.inv(np.diag(length_scales))})
         self.nbrs.fit(self.context_samples)
 

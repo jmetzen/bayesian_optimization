@@ -7,7 +7,7 @@ from scipy.optimize import fmin_l_bfgs_b
 def global_optimization(objective_function, boundaries, optimizer, maxf,
                         x0=None, approx_grad=True, random=np.random,
                         *args, **kwargs):
-    """Minimize objective_function within given boundaries.
+    """Maximize objective_function within given boundaries.
 
     This function optimizes an objective function in a search space with the
     given boundaries. The optimizer may use up to maxf evaluations of the

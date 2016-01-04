@@ -1,19 +1,18 @@
 # Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
 # Date: 01/07/2015
 
-import warnings
 from copy import deepcopy
 
 import numpy as np
-from scipy.stats import entropy, norm
+
+from sklearn.cluster import KMeans
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, WhiteKernel
 
 from bayesian_optimization import create_acquisition_function
-from bayesian_optimization.acquisition_functions import AcquisitionFunction
-from bayesian_optimization.model import ParametricModelApproximation
+from bayesian_optimization.utils.optimization import global_optimization
 
 from .bocps import BOCPSOptimizer
-from ..representation.ul_policies \
-    import model_free_policy_training, model_based_policy_training_pretrained
 
 
 class ACESOptimizer(BOCPSOptimizer):
@@ -24,12 +23,6 @@ class ACESOptimizer(BOCPSOptimizer):
 
     Parameters
     ----------
-    policy : UpperLevelPolicy-object
-        The given upper-level-policy object, which is optimized in
-        best_policy() such that the average reward in the internal GP-model is
-        maximized. The policy representation is also used in the ACEPS
-        acquisition function.
-
     context_boundaries : list of pair of floats
         The boundaries of the context space in which the best context for the
         next trial is searched
@@ -37,7 +30,7 @@ class ACESOptimizer(BOCPSOptimizer):
     n_query_points : int, default: 100
         The number of candidate query points (context-parameter pairs) which
         are determined by the base acquisition function and evaluated using
-        ACEPS
+        ACES
 
     active : bool
         Whether the context for the next trial is actively selected. This might
@@ -47,16 +40,11 @@ class ACESOptimizer(BOCPSOptimizer):
 
     For further parameters, we refer to the doc of ContextualBayesianOptimizer.
     """
-    def __init__(self, policy, context_boundaries, n_query_points=100,
-                 active=True, aceps_params=None, **kwargs):
-        super(ACESOptimizer, self).__init__(policy=policy, **kwargs)
+    def __init__(self, context_boundaries, active=True, **kwargs):
+        super(ACESOptimizer, self).__init__(**kwargs)
         self.context_boundaries = context_boundaries
-        self.n_query_points = n_query_points
         self.active = active
-        self.aceps_params = aceps_params if aceps_params is not None else {}
 
-        if self.policy is None:
-            raise ValueError("The policy in ACEPS must not be None.")
 
     def init(self, n_params, n_context_dims):
         super(ACESOptimizer, self).init(n_params, n_context_dims)
@@ -68,6 +56,10 @@ class ACESOptimizer(BOCPSOptimizer):
         else:
             raise Exception("Context-boundaries not specified for all "
                             "context dimensions.")
+
+        self.cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
+        self.cx_boundaries[:self.context_dims] = self.context_boundaries
+        self.cx_boundaries[self.context_dims:] = self.boundaries
 
     def get_desired_context(self):
         """Chooses desired context for next evaluation.
@@ -85,17 +77,18 @@ class ACESOptimizer(BOCPSOptimizer):
             self.context, self.parameters = \
                 self._determine_contextparams(self.bayes_opt)
         else:
-            # Choose context randomly and only choose next parameters
-            self.context = self.rng.uniform(size=self.context_dims) \
-                * (self.context_boundaries[:, 1]
-                    - self.context_boundaries[:, 0]) \
-                + self.context_boundaries[:, 0]
-            # Repeat context self.n_query_points times, s.t. ACEPS can only
-            # select parameters for this context
-            contexts = np.repeat(self.context, self.n_query_points)
-            contexts = contexts.reshape(-1, self.n_query_points).T
-            _, self.parameters = \
-                self._determine_contextparams(self.bayes_opt, contexts)
+            raise NotImplementedError("Passive ACES not implemented")
+            ## Choose context randomly and only choose next parameters
+            #self.context = self.rng.uniform(size=self.context_dims) \
+            #    * (self.context_boundaries[:, 1]
+            #        - self.context_boundaries[:, 0]) \
+            #    + self.context_boundaries[:, 0]
+            ## Repeat context self.n_query_points times, s.t. ACES can only
+            ## select parameters for this context
+            #contexts = np.repeat(self.context, self.n_query_points)
+            #contexts = contexts.reshape(-1, self.n_query_points).T
+            #_, self.parameters = \
+            #    self._determine_contextparams(self.bayes_opt, contexts)
         # Return only context, the parameters are later returned in
         # get_next_parameters
         return self.context
@@ -120,20 +113,110 @@ class ACESOptimizer(BOCPSOptimizer):
         params[:] = self.parameters
 
     def _determine_contextparams(self, optimizer):
-        """Select context and params jointly using ACEPS."""
-        cx_boundaries = np.empty((self.context_dims + self.dimension, 2))
-        cx_boundaries[:self.context_dims] = self.context_boundaries
-        cx_boundaries[self.context_dims:] = self.boundaries
-
+        """Select context and params jointly using ACES."""
         # Determine optimal parameters for fixed context
-        cx = optimizer.select_query_point(cx_boundaries)
+        cx = optimizer.select_query_point(self.cx_boundaries)
         return cx[:self.context_dims], cx[self.context_dims:]
 
     def _create_acquisition_function(self, name, model, **kwargs):
         if not name in ["ContextualEntropySearch",
-                        "ContextualEntropySearchLocal", "ACEPS"]:
+                        "ContextualEntropySearchLocal"]:
             raise ValueError("%s acquisition function not supported."
                              % name)
-
         return create_acquisition_function(name, model, **kwargs)
 
+
+class SurrogateACESOptimizer(ACESOptimizer):
+    def __init__(self, context_boundaries, active=True, n_context_samples=25,
+                 **kwargs):
+        super(SurrogateACESOptimizer, self).__init__(
+            context_boundaries=context_boundaries, active=active, **kwargs)
+        self.n_context_samples = n_context_samples
+
+
+    def init(self, n_params, n_context_dims):
+        super(SurrogateACESOptimizer, self).init(n_params, n_context_dims)
+
+    def _determine_contextparams(self, optimizer):
+        """Select context and params jointly using ACES."""
+        # Choose the first samples uniform randomly
+        if len(optimizer.X_) < optimizer.initial_random_samples:
+            cx = np.random.uniform(self.cx_boundaries[:, 0],
+                                   self.cx_boundaries[:, 1])
+            return cx[:self.context_dims], cx[self.context_dims:]
+
+        # Prepare entropy search objective
+        self._init_es_ensemble()
+        # Generate data for function mapping
+        # query_context x query_parameters x eval_context -> entropy reduction
+        n_query_points = 20
+        n_data_dims = 2 * self.context_dims + self.dimension
+        X = np.empty((self.n_context_samples * n_query_points, n_data_dims))
+        y = np.empty(self.n_context_samples * n_query_points)
+        queries = []
+        for i in range(n_query_points):
+            query = np.random.uniform(self.cx_boundaries[:, 0],
+                                      self.cx_boundaries[:, 1])
+            queries.append(query)
+            X[i*self.n_context_samples:(i+1)*self.n_context_samples,
+              :self.context_dims + self.dimension] = query
+            X[i*self.n_context_samples:(i+1)*self.n_context_samples,
+              self.context_dims + self.dimension:] = self.context_samples
+            y[i*self.n_context_samples:(i+1)*self.n_context_samples] = \
+                [es(query)[0] for es in self.entropy_search_ensemble]
+
+        #cx = queries[np.argmax(y.reshape(-1, n_query_points).mean(0))]
+
+        # Fit GP model to this data
+        kernel = C(1.0, (1e-10, 100.0)) \
+            * RBF(length_scale=(1.0,)*n_data_dims,
+                  length_scale_bounds=[(0.01, 1000.0),]*n_data_dims) \
+            + WhiteKernel(1.0, (1e-10, 100.0))
+        est = GaussianProcessRegressor(kernel=kernel)
+        est.fit(X, y)
+
+        # Select query based on mean entropy reduction in surrogate model
+        # predictions
+        contexts = np.random.uniform(self.context_boundaries[:, 0],
+                                     self.context_boundaries[:, 1],
+                                     (250, self.context_dims))
+        def objective_function(cx):
+            X_query = np.empty((250, n_data_dims))
+            X_query[:, :self.context_dims + self.dimension] = cx
+            X_query[:, self.context_dims + self.dimension:] = contexts
+            return est.predict(X_query).mean()
+
+        cx = global_optimization(
+                objective_function, boundaries=self.cx_boundaries,
+                optimizer=self.optimizer, maxf=optimizer.maxf)
+        return cx[:self.context_dims], cx[self.context_dims:]
+
+
+    def _init_es_ensemble(self):
+        # Determine samples at which CES will be evaluated by
+        # 1. uniform random sampling
+        self.context_samples = \
+            np.random.uniform(self.context_boundaries[:, 0],
+                              self.context_boundaries[:, 1],
+                              (self.n_context_samples*25, self.context_dims))
+        # 2. subsampling via k-means clustering
+        kmeans = KMeans(n_clusters=self.n_context_samples, n_jobs=1)
+        self.context_samples = \
+            kmeans.fit(self.context_samples).cluster_centers_
+
+        # 3. Create entropy search ensemble
+        self.entropy_search_ensemble = []
+        for i in range(self.n_context_samples):
+            cx_boundaries_i = np.copy(self.cx_boundaries)
+            cx_boundaries_i[:self.context_dims] = \
+                self.context_samples[i][:, np.newaxis]
+            entropy_search_fixed_context = deepcopy(self.acquisition_function)
+            entropy_search_fixed_context.set_boundaries(cx_boundaries_i)
+
+            self.entropy_search_ensemble.append(entropy_search_fixed_context)
+
+    def _create_acquisition_function(self, name, model, **kwargs):
+        if not name in ["EntropySearch"]:
+            raise ValueError("%s acquisition function not supported."
+                             % name)
+        return create_acquisition_function(name, model, **kwargs)

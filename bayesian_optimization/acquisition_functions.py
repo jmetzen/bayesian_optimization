@@ -406,113 +406,6 @@ class ContextualEntropySearch(AcquisitionFunction):
         self.nbrs.fit(self.context_samples)
 
 
-class ACEPS(ContextualEntropySearch):
-    def __init__(self, model, policy, n_context_dims,
-                 n_context_samples, n_policy_samples=20, n_gp_samples=1000,
-                 n_samples_y=10, policy_training="model-free"):
-        super(ACEPS, self).__init__(model, n_context_dims, n_context_samples,
-                                    n_policy_samples, n_gp_samples,
-                                    n_samples_y)
-        self.policy = policy
-        self.policy_training = policy_training
-
-
-    def set_boundaries(self, boundaries):
-        self._sample_contexts(boundaries[:self.n_context_dims])
-
-        selected_params = \
-            self._sample_policy_parameters(boundaries[:self.n_context_dims],
-                                           boundaries[self.n_context_dims:])
-
-        self.entropy_search_ensemble = []
-        for i in range(self.n_context_samples):
-            boundaries_i = np.copy(boundaries)
-            boundaries_i[:self.n_context_dims] = \
-                self.context_samples[i][:, np.newaxis]
-            entropy_search_fixed_context = \
-                EntropySearch(self.model, self.n_candidates, self.n_gp_samples,
-                              self.n_samples_y, self.n_trial_points)
-
-            X_candidate =  np.empty((self.n_candidates, 4)) # XXX
-            X_candidate[:, :self.n_context_dims] = self.context_samples[i]
-            X_candidate[:, self.n_context_dims:] = selected_params[:, i]
-            entropy_search_fixed_context.set_boundaries(boundaries_i,
-                                                        X_candidate)
-
-            self.entropy_search_ensemble.append(entropy_search_fixed_context)
-
-
-    def _sample_policy_parameters(self, context_boundaries, parameter_boundaries):
-        """ Sample close-to-optimal policies and let them select parameters.
-
-        We determine a set of policies which is close-to-optimal according to
-        samples drawn from the model's posterior and let these policies
-        determine parameters
-        """
-        from bolero_bayes_opt.representation.ul_policies \
-            import model_free_policy_training, model_based_policy_training_pretrained
-        # Compute policy which is close to optimal according to current model
-        contexts = self.model.gp.X_train_[:, :self.n_context_dims]
-        parameters = self.model.gp.X_train_[:, self.n_context_dims:]
-        returns = self.model.gp.y_train_
-        if self.policy_training == "model-free":
-            self.policy = model_free_policy_training(
-                        self.policy, contexts, parameters, returns,
-                        epsilon=1.0, min_eta=1e-6)
-        elif self.policy_training == "model-based":
-            self.policy.fit(contexts,
-                            [self.parameter_boundaries.mean(1)]*contexts.shape[0],
-                            weights=np.ones(contexts.shape[0]))
-            self.policy = model_based_policy_training_pretrained(
-                policy=self.policy, model=self.model.gp,
-                contexts=contexts, boundaries=self.parameter_boundaries)
-        else:
-            raise NotImplementedError()
-
-        # Draw context samples, let policy select parameters for these context
-        # (with exploration), and sample multiple possible outcomes for these
-        # (context, parameter) samples from the GP model.
-        while True:  # XXX
-            X_sample = np.empty((self.n_context_samples*5,
-                                 self.n_context_dims+parameter_boundaries.shape[0]))
-            X_sample[:, :self.n_context_dims] = \
-                np.random.uniform(context_boundaries[:, 0],
-                                  context_boundaries[:, 1],
-                                  (self.n_context_samples*5, self.n_context_dims))
-            X_sample[:, self.n_context_dims:] = \
-                [self.policy(X_sample[i, :self.n_context_dims])
-                 for i in range(self.n_context_samples*5)]
-            try:
-                y_sample = self.model.gp.sample_y(X_sample, self.n_candidates)
-                break
-            except np.linalg.LinAlgError:
-                continue
-
-        # Train for each possible outcome one policy and evaluate this policy
-        # on the context samples
-        selected_params = []  # XXX: Vectorize
-        for i in range(y_sample.shape[1]):
-            policy_sample = model_free_policy_training(
-                self.policy, X_sample[:, range(self.n_context_dims)],
-                X_sample[:, range(self.n_context_dims, X_sample.shape[1])],
-                y_sample[:, i])
-
-            params = [policy_sample(np.atleast_1d(self.context_samples[i]),
-                                    explore=False).ravel()
-                      for i in range(self.context_samples.shape[0])]
-            selected_params.append(params)
-
-        selected_params = np.array(selected_params)
-        # Enforce lower and upper bound on possible parameters
-        for i in range(selected_params.shape[2]):
-            selected_params[:, :, i][selected_params[:, :, i] < parameter_boundaries[i, 0]] = \
-                parameter_boundaries[i, 0]
-            selected_params[:, :, i][selected_params[:, :, i] > parameter_boundaries[i, 1]] = \
-                parameter_boundaries[i, 1]
-
-        return selected_params
-
-
 ACQUISITION_FUNCTIONS = {
     "PI": ProbabilityOfImprovement,
     "EI": ExpectedImprovement,
@@ -521,8 +414,7 @@ ACQUISITION_FUNCTIONS = {
     "RANDOM": Random,
     "EntropySearch": EntropySearch,
     "ContextualEntropySearch": ContextualEntropySearch,
-    "ContextualEntropySearchLocal": ContextualEntropySearchLocal,
-    "ACEPS": ACEPS}
+    "ContextualEntropySearchLocal": ContextualEntropySearchLocal}
 
 
 def create_acquisition_function(name, model, **kwargs):

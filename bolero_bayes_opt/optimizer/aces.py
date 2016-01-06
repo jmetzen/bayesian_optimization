@@ -127,7 +127,7 @@ class ACESOptimizer(BOCPSOptimizer):
 
 
 class SurrogateACESOptimizer(ACESOptimizer):
-    def __init__(self, context_boundaries, active=True, n_context_samples=25,
+    def __init__(self, context_boundaries, n_context_samples, active=True,
                  **kwargs):
         super(SurrogateACESOptimizer, self).__init__(
             context_boundaries=context_boundaries, active=active, **kwargs)
@@ -149,31 +149,28 @@ class SurrogateACESOptimizer(ACESOptimizer):
         self._init_es_ensemble()
         # Generate data for function mapping
         # query_context x query_parameters x eval_context -> entropy reduction
-        n_query_points = 20
+        n_query_points = 500
         n_data_dims = 2 * self.context_dims + self.dimension
-        X = np.empty((self.n_context_samples * n_query_points, n_data_dims))
-        y = np.empty(self.n_context_samples * n_query_points)
-        queries = []
+        X = np.empty((n_query_points, n_data_dims))
+        y = np.empty(n_query_points)
         for i in range(n_query_points):
+            # Select query point and evaluation context randomly
             query = np.random.uniform(self.cx_boundaries[:, 0],
                                       self.cx_boundaries[:, 1])
-            queries.append(query)
-            X[i*self.n_context_samples:(i+1)*self.n_context_samples,
-              :self.context_dims + self.dimension] = query
-            X[i*self.n_context_samples:(i+1)*self.n_context_samples,
-              self.context_dims + self.dimension:] = self.context_samples
-            y[i*self.n_context_samples:(i+1)*self.n_context_samples] = \
-                [es(query)[0] for es in self.entropy_search_ensemble]
-
-        #cx = queries[np.argmax(y.reshape(-1, n_query_points).mean(0))]
+            ind = np.random.choice(self.n_context_samples)
+            # Store query point in X and value of entropy-search in y
+            X[i, :self.context_dims + self.dimension] = query
+            X[i, self.context_dims + self.dimension:] = \
+                self.context_samples[ind] - query[:self.context_dims]
+            y[i] = self.entropy_search_ensemble[ind](query)[0]
 
         # Fit GP model to this data
         kernel = C(1.0, (1e-10, 100.0)) \
             * RBF(length_scale=(1.0,)*n_data_dims,
-                  length_scale_bounds=[(0.01, 1000.0),]*n_data_dims) \
+                  length_scale_bounds=[(0.01, 10.0),]*n_data_dims) \
             + WhiteKernel(1.0, (1e-10, 100.0))
-        est = GaussianProcessRegressor(kernel=kernel)
-        est.fit(X, y)
+        self.es_surrogate = GaussianProcessRegressor(kernel=kernel)
+        self.es_surrogate.fit(X, y)
 
         # Select query based on mean entropy reduction in surrogate model
         # predictions
@@ -183,8 +180,11 @@ class SurrogateACESOptimizer(ACESOptimizer):
         def objective_function(cx):
             X_query = np.empty((250, n_data_dims))
             X_query[:, :self.context_dims + self.dimension] = cx
-            X_query[:, self.context_dims + self.dimension:] = contexts
-            return est.predict(X_query).mean()
+            X_query[:, self.context_dims + self.dimension:] = \
+                contexts - cx[:self.context_dims]
+            es_pred, es_cov = \
+                self.es_surrogate.predict(X_query, return_cov=True)
+            return es_pred.mean() + np.sqrt(es_cov.mean())
 
         cx = global_optimization(
                 objective_function, boundaries=self.cx_boundaries,

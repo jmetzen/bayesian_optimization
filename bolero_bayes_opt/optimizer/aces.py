@@ -127,12 +127,12 @@ class ACESOptimizer(BOCPSOptimizer):
 
 
 class SurrogateACESOptimizer(ACESOptimizer):
-    def __init__(self, context_boundaries, n_context_samples, active=True,
-                 **kwargs):
+    def __init__(self, context_boundaries, n_context_samples, kappa,
+                 active=True, **kwargs):
         super(SurrogateACESOptimizer, self).__init__(
             context_boundaries=context_boundaries, active=active, **kwargs)
         self.n_context_samples = n_context_samples
-
+        self.kappa = kappa
 
     def init(self, n_params, n_context_dims):
         super(SurrogateACESOptimizer, self).init(n_params, n_context_dims)
@@ -184,7 +184,7 @@ class SurrogateACESOptimizer(ACESOptimizer):
                 contexts - cx[:self.context_dims]
             es_pred, es_cov = \
                 self.es_surrogate.predict(X_query, return_cov=True)
-            return es_pred.mean() + np.sqrt(es_cov.mean())
+            return es_pred.mean() + self.kappa * np.sqrt(es_cov.mean())
 
         cx = global_optimization(
                 objective_function, boundaries=self.cx_boundaries,

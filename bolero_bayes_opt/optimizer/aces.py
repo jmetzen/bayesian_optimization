@@ -216,7 +216,7 @@ class SurrogateACESOptimizer(ACESOptimizer):
             self.entropy_search_ensemble.append(entropy_search_fixed_context)
 
     def _create_acquisition_function(self, name, model, **kwargs):
-        if not name in ["EntropySearch"]:
+        if not name in ["EntropySearch", "MinimalRegretSearch"]:
             raise ValueError("%s acquisition function not supported."
                              % name)
         return create_acquisition_function(name, model, **kwargs)

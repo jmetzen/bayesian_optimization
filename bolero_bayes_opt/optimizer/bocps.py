@@ -249,7 +249,8 @@ class BOCPSOptimizer(ContextualOptimizer):
         return cx[self.context_dims:]
 
     def _create_acquisition_function(self, name, model, **kwargs):
-        if not name in ["UCB", "EntropySearch", "GREEDY", "RANDOM"]:
+        if not name in ["UCB", "EntropySearch", "MinimalRegretSearch",
+                        "GREEDY", "RANDOM"]:
             raise ValueError("%s acquisition function not supported."
                              % name)
 

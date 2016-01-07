@@ -312,6 +312,116 @@ class EntropySearch(AcquisitionFunction):
         self.base_entropy = entropy(p_max)
 
 
+class MinimalRegretSearch(AcquisitionFunction):
+    """
+    """
+    def __init__(self, model, n_candidates=20, n_gp_samples=500,
+                 n_samples_y=10, n_trial_points=500):
+        self.model = model
+        self.n_candidates = n_candidates
+        self.n_gp_samples = n_gp_samples
+        self.n_samples_y =  n_samples_y
+        self.n_trial_points = n_trial_points
+
+        equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
+        self.percent_points = norm.ppf(equidistant_grid)
+
+    def __call__(self, x, incumbent=0, *args, **kwargs):
+        """ Returns the change in entropy of p_max when sampling at x.
+
+        Parameters
+        ----------
+        x: array-like
+            The position at which the upper confidence bound will be evaluated.
+        incumbent: float
+            Baseline value, typically the maximum (actual) return observed
+            so far during learning. Defaults to 0. [Not used by this acquisition
+            function]
+
+        Returns
+        -------
+        regret_change: float
+            the change in regret when sampling at x.
+        """
+        x = np.atleast_2d(x)
+
+        a_MRS = np.empty((x.shape[0], self.n_samples_y))
+
+        f_mean_all, f_cov_all = \
+            self.model.gp.predict(np.vstack((self.X_candidate, x)),
+                                  return_cov=True)
+        f_mean = f_mean_all[:self.n_candidates]
+        f_cov = f_cov_all[:self.n_candidates, :self.n_candidates]
+
+        # XXX: Vectorize
+        for i in range(self.n_candidates, self.n_candidates+x.shape[0]):
+            f_cov_query = f_cov_all[[i]][:, [i]]
+            f_cov_cross = f_cov_all[:self.n_candidates, [i]]
+            f_cov_query_inv = np.linalg.inv(f_cov_query)
+            f_cov_delta = -np.dot(np.dot(f_cov_cross, f_cov_query_inv),
+                                  f_cov_cross.T)
+
+            # precompute samples for non-modified mean
+            f_cov_mod = f_cov + f_cov_delta
+            f_samples = np.random.multivariate_normal(
+                f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
+
+            # adapt for different means
+            for j in range(self.n_samples_y):  # sample outcomes
+                y_delta = np.sqrt(f_cov_query + self.model.gp.alpha)[:, 0] \
+                    * self.percent_points[j]
+                f_mean_delta = f_cov_cross.dot(f_cov_query_inv).dot(y_delta)
+
+                f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
+                bincount = np.bincount(np.argmax(f_samples_j, 0),
+                                       minlength=f_mean.shape[0])
+                regret = \
+                    -((f_samples_j - f_samples_j.max(0)).mean(1) * bincount).sum() \
+                    / self.n_gp_samples
+                a_MRS[i - self.n_candidates, j] = \
+                    self.base_regret - regret
+
+        return a_MRS.mean(1)
+
+    def set_boundaries(self, boundaries, X_candidate=None):
+        """Sets boundaries of search space.
+
+        Parameters
+        ----------
+        boundaries: ndarray-like, shape=(n_params_dims, 2)
+            Box constraint on search space. boundaries[:, 0] defines the lower
+            bounds on the dimensions, boundaries[:, 1] defines the upper
+            bounds.
+        """
+        self.X_candidate = X_candidate
+        if self.X_candidate is None:
+            # Sample n_candidates data points, which are checked for
+            # being the location of p_max
+            self.X_candidate = \
+                np.empty((self.n_candidates, boundaries.shape[0]))
+            for i in range(self.n_candidates):
+                # Select n_trial_points data points uniform randomly
+                candidates = np.random.uniform(
+                    boundaries[:, 0], boundaries[:, 1],
+                    (self.n_trial_points, boundaries.shape[0]))
+                # Sample function from GP posterior and select the trial points
+                # which maximizes the posterior sample as candidate
+                y_samples = self.model.gp.sample_y(candidates)
+                self.X_candidate[i] = candidates[np.argmax(y_samples)]
+
+        # determine base regret
+        f_mean, f_cov = \
+            self.model.gp.predict(self.X_candidate, return_cov=True)
+
+        f_samples = np.random.multivariate_normal(f_mean, f_cov,
+                                                  self.n_gp_samples).T
+        bincount = \
+            np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
+        self.base_regret = \
+            -((f_samples - f_samples.max(0)).mean(1) * bincount).sum() \
+                 / self.n_gp_samples
+
+
 class ContextualEntropySearchLocal(AcquisitionFunction):
     def __init__(self, model, n_context_dims,
                  n_candidates=20, n_gp_samples=500,
@@ -413,6 +523,7 @@ ACQUISITION_FUNCTIONS = {
     "GREEDY": Greedy,
     "RANDOM": Random,
     "EntropySearch": EntropySearch,
+    "MinimalRegretSearch": MinimalRegretSearch,
     "ContextualEntropySearch": ContextualEntropySearch,
     "ContextualEntropySearchLocal": ContextualEntropySearchLocal}
 

@@ -372,14 +372,16 @@ class MinimalRegretSearch(AcquisitionFunction):
                     * self.percent_points[j]
                 f_mean_delta = f_cov_cross.dot(f_cov_query_inv).dot(y_delta)
 
+                f_mean_j = f_mean + f_mean_delta
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
+
                 bincount = np.bincount(np.argmax(f_samples_j, 0),
                                        minlength=f_mean.shape[0])
-                regret = \
-                    -((f_samples_j - f_samples_j.max(0)).mean(1) * bincount).sum() \
-                    / self.n_gp_samples
-                a_MRS[i - self.n_candidates, j] = \
-                    self.base_regret - regret
+                p_max =  bincount / float(self.n_gp_samples)
+
+                regret = ((f_mean_j.max() - f_mean_j) * p_max).sum()
+
+                a_MRS[i - self.n_candidates, j] = self.base_regret - regret
 
         return a_MRS.mean(1)
 
@@ -409,17 +411,25 @@ class MinimalRegretSearch(AcquisitionFunction):
                 y_samples = self.model.gp.sample_y(candidates)
                 self.X_candidate[i] = candidates[np.argmax(y_samples)]
 
+        #from sklearn.cluster import KMeans
+        #self.X_candidate = \
+        #    KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
+
         # determine base regret
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
 
         f_samples = np.random.multivariate_normal(f_mean, f_cov,
                                                   self.n_gp_samples).T
+
         bincount = \
             np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
-        self.base_regret = \
-            -((f_samples - f_samples.max(0)).mean(1) * bincount).sum() \
-                 / self.n_gp_samples
+        p_max = bincount / float(self.n_gp_samples)
+
+        self.base_regret = ((f_mean.max() - f_mean) * p_max).sum()
+
+        #print self.base_regret, self(boundaries.mean(1))
+        #self.set_boundaries(boundaries)
 
 
 class ContextualEntropySearchLocal(AcquisitionFunction):

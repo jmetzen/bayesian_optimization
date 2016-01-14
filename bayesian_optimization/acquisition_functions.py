@@ -256,7 +256,6 @@ class EntropySearch(AcquisitionFunction):
                                   f_cov_cross.T)
 
             # precompute samples for non-modified mean
-            f_cov_mod = f_cov + f_cov_delta
             f_samples = np.random.multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
@@ -300,6 +299,8 @@ class EntropySearch(AcquisitionFunction):
                 # which maximizes the posterior sample as candidate
                 y_samples = self.model.gp.sample_y(candidates)
                 self.X_candidate[i] = candidates[np.argmax(y_samples)]
+        else:
+            self.n_candidates = self.X_candidate.shape[0]
 
         # determine base entropy
         f_mean, f_cov = \
@@ -362,7 +363,6 @@ class MinimalRegretSearch(AcquisitionFunction):
                                   f_cov_cross.T)
 
             # precompute samples for non-modified mean
-            f_cov_mod = f_cov + f_cov_delta
             f_samples = np.random.multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
@@ -374,12 +374,9 @@ class MinimalRegretSearch(AcquisitionFunction):
 
                 f_mean_j = f_mean + f_mean_delta
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
+                opt_ind = f_mean_j.argmax()
 
-                bincount = np.bincount(np.argmax(f_samples_j, 0),
-                                       minlength=f_mean.shape[0])
-                p_max =  bincount / float(self.n_gp_samples)
-
-                regret = ((f_mean_j.max() - f_mean_j) * p_max).sum()
+                regret = (f_samples_j.max(0) - f_samples_j[opt_ind]).mean()
 
                 a_MRS[i - self.n_candidates, j] = self.base_regret - regret
 
@@ -410,6 +407,8 @@ class MinimalRegretSearch(AcquisitionFunction):
                 # which maximizes the posterior sample as candidate
                 y_samples = self.model.gp.sample_y(candidates)
                 self.X_candidate[i] = candidates[np.argmax(y_samples)]
+        else:
+            self.n_candidates = self.X_candidate.shape[0]
 
         #from sklearn.cluster import KMeans
         #self.X_candidate = \
@@ -418,18 +417,12 @@ class MinimalRegretSearch(AcquisitionFunction):
         # determine base regret
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
-
         f_samples = np.random.multivariate_normal(f_mean, f_cov,
                                                   self.n_gp_samples).T
+        opt_ind = f_mean.argmax()
 
-        bincount = \
-            np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
-        p_max = bincount / float(self.n_gp_samples)
-
-        self.base_regret = ((f_mean.max() - f_mean) * p_max).sum()
-
-        #print self.base_regret, self(boundaries.mean(1))
-        #self.set_boundaries(boundaries)
+        self.base_regret = \
+            (f_samples.max(0) - f_samples[opt_ind, :]).mean()
 
 
 class ContextualEntropySearchLocal(AcquisitionFunction):

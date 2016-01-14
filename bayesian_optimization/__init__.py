@@ -3,4 +3,4 @@ from bayesian_optimization import (BayesianOptimizer, REMBOOptimizer,
 from model import GaussianProcessModel
 from acquisition_functions import (ProbabilityOfImprovement,
     ExpectedImprovement, UpperConfidenceBound, EntropySearch,
-    create_acquisition_function)
+    MinimalRegretSearch, create_acquisition_function)

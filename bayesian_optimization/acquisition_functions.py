@@ -289,8 +289,8 @@ class EntropySearch(AcquisitionFunction):
             # Sample n_candidates data points, which are checked for
             # being the location of p_max
             self.X_candidate = \
-                np.empty((self.n_candidates, boundaries.shape[0]))
-            for i in range(self.n_candidates):
+                np.empty((self.n_candidates * 5, boundaries.shape[0]))
+            for i in range(self.n_candidates * 5):
                 # Select n_trial_points data points uniform randomly
                 candidates = np.random.uniform(
                     boundaries[:, 0], boundaries[:, 1],
@@ -299,6 +299,9 @@ class EntropySearch(AcquisitionFunction):
                 # which maximizes the posterior sample as candidate
                 y_samples = self.model.gp.sample_y(candidates)
                 self.X_candidate[i] = candidates[np.argmax(y_samples)]
+
+            self.X_candidate = \
+                KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
         else:
             self.n_candidates = self.X_candidate.shape[0]
 
@@ -317,12 +320,13 @@ class MinimalRegretSearch(AcquisitionFunction):
     """
     """
     def __init__(self, model, n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=500):
+                 n_samples_y=10, n_trial_points=500, point=False):
         self.model = model
         self.n_candidates = n_candidates
         self.n_gp_samples = n_gp_samples
         self.n_samples_y =  n_samples_y
         self.n_trial_points = n_trial_points
+        self.point = point
 
         equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
         self.percent_points = norm.ppf(equidistant_grid)
@@ -374,9 +378,15 @@ class MinimalRegretSearch(AcquisitionFunction):
 
                 f_mean_j = f_mean + f_mean_delta
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
-                opt_ind = f_mean_j.argmax()
 
-                regret = (f_samples_j.max(0) - f_samples_j[opt_ind]).mean()
+                if self.point:
+                    opt_ind = f_mean_j.argmax()
+                    regret = (f_samples_j.max(0) - f_samples_j[opt_ind, :]).mean()
+                else:
+                    bincount = np.bincount(np.argmax(f_samples_j, 0),
+                                           minlength=f_mean.shape[0])
+                    p_max =  bincount / float(self.n_gp_samples)
+                    regret = ((f_samples_j.max(0) - f_samples_j).mean(1) * p_max).sum()
 
                 a_MRS[i - self.n_candidates, j] = self.base_regret - regret
 
@@ -397,8 +407,8 @@ class MinimalRegretSearch(AcquisitionFunction):
             # Sample n_candidates data points, which are checked for
             # being the location of p_max
             self.X_candidate = \
-                np.empty((self.n_candidates, boundaries.shape[0]))
-            for i in range(self.n_candidates):
+                np.empty((self.n_candidates * 5, boundaries.shape[0]))
+            for i in range(self.n_candidates * 5):
                 # Select n_trial_points data points uniform randomly
                 candidates = np.random.uniform(
                     boundaries[:, 0], boundaries[:, 1],
@@ -407,22 +417,27 @@ class MinimalRegretSearch(AcquisitionFunction):
                 # which maximizes the posterior sample as candidate
                 y_samples = self.model.gp.sample_y(candidates)
                 self.X_candidate[i] = candidates[np.argmax(y_samples)]
+
+            self.X_candidate = \
+                KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
         else:
             self.n_candidates = self.X_candidate.shape[0]
-
-        #from sklearn.cluster import KMeans
-        #self.X_candidate = \
-        #    KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
 
         # determine base regret
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
         f_samples = np.random.multivariate_normal(f_mean, f_cov,
                                                   self.n_gp_samples).T
-        opt_ind = f_mean.argmax()
 
-        self.base_regret = \
-            (f_samples.max(0) - f_samples[opt_ind, :]).mean()
+        if self.point:
+            opt_ind = f_mean.argmax()
+            self.base_regret  = (f_samples.max(0) - f_samples[opt_ind, :]).mean()
+        else:
+            bincount = \
+                np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
+            p_max = bincount / float(self.n_gp_samples)
+
+            self.base_regret = ((f_samples.max(0) - f_samples).mean(1) * p_max).sum()
 
 
 class ContextualEntropySearchLocal(AcquisitionFunction):

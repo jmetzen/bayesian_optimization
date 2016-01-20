@@ -320,13 +320,14 @@ class MinimalRegretSearch(AcquisitionFunction):
     """
     """
     def __init__(self, model, n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=500, point=False):
+                 n_samples_y=10, n_trial_points=500, point=False, rng_seed=0):
         self.model = model
         self.n_candidates = n_candidates
         self.n_gp_samples = n_gp_samples
         self.n_samples_y =  n_samples_y
         self.n_trial_points = n_trial_points
         self.point = point
+        self.rng_seed = rng_seed
 
         equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
         self.percent_points = norm.ppf(equidistant_grid)
@@ -350,7 +351,10 @@ class MinimalRegretSearch(AcquisitionFunction):
         """
         x = np.atleast_2d(x)
 
-        a_MRS = np.empty((x.shape[0], self.n_samples_y))
+        if self.point:
+            a_MRS = np.empty((x.shape[0], self.n_samples_y))
+        else:
+            a_MRS = np.empty((x.shape[0], self.n_samples_y, self.n_candidates))
 
         f_mean_all, f_cov_all = \
             self.model.gp.predict(np.vstack((self.X_candidate, x)),
@@ -367,7 +371,7 @@ class MinimalRegretSearch(AcquisitionFunction):
                                   f_cov_cross.T)
 
             # precompute samples for non-modified mean
-            f_samples = np.random.multivariate_normal(
+            f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
             # adapt for different means
@@ -380,17 +384,25 @@ class MinimalRegretSearch(AcquisitionFunction):
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
 
                 if self.point:
-                    opt_ind = f_mean_j.argmax()
-                    regret = (f_samples_j.max(0) - f_samples_j[opt_ind, :]).mean()
+                    #opt_ind = f_mean_j.argmax()
+                    regrets = f_samples_j.max(0) - f_samples_j[self.opt_ind, :]
+                    a_MRS[i - self.n_candidates, j] = \
+                        (self.base_regrets - regrets).mean()
                 else:
-                    bincount = np.bincount(np.argmax(f_samples_j, 0),
-                                           minlength=f_mean.shape[0])
-                    p_max =  bincount / float(self.n_gp_samples)
-                    regret = ((f_samples_j.max(0) - f_samples_j).mean(1) * p_max).sum()
+                    #bincount = np.bincount(np.argmax(f_samples_j, 0),
+                    #                       minlength=f_mean.shape[0])
+                    #p_max =  bincount / float(self.n_gp_samples)
+                    regrets = f_samples_j.max(0) - f_samples_j
 
-                a_MRS[i - self.n_candidates, j] = self.base_regret - regret
+                    a_MRS[i - self.n_candidates, j] = \
+                        np.mean(self.base_regrets - regrets, 1)  # Mean over MC samples
 
-        return a_MRS.mean(1)
+                #a_MRS[i - self.n_candidates, j] = self.base_regret - regret
+
+        if self.point:
+            return a_MRS.mean(1)
+        else:
+            return (a_MRS.mean(1) * self.p_max).sum(1)  # Mean over y_delta
 
     def set_boundaries(self, boundaries, X_candidate=None):
         """Sets boundaries of search space.
@@ -426,18 +438,18 @@ class MinimalRegretSearch(AcquisitionFunction):
         # determine base regret
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
-        f_samples = np.random.multivariate_normal(f_mean, f_cov,
-                                                  self.n_gp_samples).T
+        f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
+            f_mean, f_cov, self.n_gp_samples).T
 
         if self.point:
-            opt_ind = f_mean.argmax()
-            self.base_regret  = (f_samples.max(0) - f_samples[opt_ind, :]).mean()
+            self.opt_ind = f_mean.argmax()
+            self.base_regrets  = f_samples.max(0) - f_samples[self.opt_ind, :]
         else:
             bincount = \
                 np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
-            p_max = bincount / float(self.n_gp_samples)
+            self.p_max = bincount / float(self.n_gp_samples)
 
-            self.base_regret = ((f_samples.max(0) - f_samples).mean(1) * p_max).sum()
+            self.base_regrets = f_samples.max(0) - f_samples
 
 
 class ContextualEntropySearchLocal(AcquisitionFunction):

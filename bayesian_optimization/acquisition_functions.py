@@ -297,8 +297,11 @@ class EntropySearch(AcquisitionFunction):
                     (self.n_trial_points, boundaries.shape[0]))
                 # Sample function from GP posterior and select the trial points
                 # which maximizes the posterior sample as candidate
-                y_samples = self.model.gp.sample_y(candidates)
-                self.X_candidate[i] = candidates[np.argmax(y_samples)]
+                try:
+                    y_samples = self.model.gp.sample_y(candidates)
+                    self.X_candidate[i] = candidates[np.argmax(y_samples)]
+                except np.linalg.LinAlgError:
+                    self.X_candidate[i] = candidates[0]
 
             self.X_candidate = \
                 KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
@@ -351,10 +354,7 @@ class MinimalRegretSearch(AcquisitionFunction):
         """
         x = np.atleast_2d(x)
 
-        if self.point:
-            a_MRS = np.empty((x.shape[0], self.n_samples_y))
-        else:
-            a_MRS = np.empty((x.shape[0], self.n_samples_y, self.n_candidates))
+        a_MRS = np.empty((x.shape[0], self.n_samples_y))
 
         f_mean_all, f_cov_all = \
             self.model.gp.predict(np.vstack((self.X_candidate, x)),
@@ -384,25 +384,20 @@ class MinimalRegretSearch(AcquisitionFunction):
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
 
                 if self.point:
-                    #opt_ind = f_mean_j.argmax()
-                    regrets = f_samples_j.max(0) - f_samples_j[self.opt_ind, :]
+                    opt_ind = f_mean_j.argmax()
+                    regrets = f_samples_j.max(0) - f_samples_j[opt_ind, :]
                     a_MRS[i - self.n_candidates, j] = \
-                        (self.base_regrets - regrets).mean()
+                        np.mean(self.base_regrets - regrets)
                 else:
-                    #bincount = np.bincount(np.argmax(f_samples_j, 0),
-                    #                       minlength=f_mean.shape[0])
-                    #p_max =  bincount / float(self.n_gp_samples)
+                    bincount = np.bincount(np.argmax(f_samples_j, 0),
+                                           minlength=f_mean.shape[0])
+                    p_max =  bincount / float(self.n_gp_samples)
+
                     regrets = f_samples_j.max(0) - f_samples_j
-
                     a_MRS[i - self.n_candidates, j] = \
-                        np.mean(self.base_regrets - regrets, 1)  # Mean over MC samples
+                        (np.mean(self.base_regrets - regrets, 1) * p_max).sum()
 
-                #a_MRS[i - self.n_candidates, j] = self.base_regret - regret
-
-        if self.point:
-            return a_MRS.mean(1)
-        else:
-            return (a_MRS.mean(1) * self.p_max).sum(1)  # Mean over y_delta
+        return a_MRS.mean(1)  # Mean over y_delta
 
     def set_boundaries(self, boundaries, X_candidate=None):
         """Sets boundaries of search space.
@@ -427,8 +422,11 @@ class MinimalRegretSearch(AcquisitionFunction):
                     (self.n_trial_points, boundaries.shape[0]))
                 # Sample function from GP posterior and select the trial points
                 # which maximizes the posterior sample as candidate
-                y_samples = self.model.gp.sample_y(candidates)
-                self.X_candidate[i] = candidates[np.argmax(y_samples)]
+                try:
+                    y_samples = self.model.gp.sample_y(candidates)
+                    self.X_candidate[i] = candidates[np.argmax(y_samples)]
+                except np.linalg.LinAlgError:
+                    self.X_candidate[i] = candidates[0]
 
             self.X_candidate = \
                 KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
@@ -442,13 +440,9 @@ class MinimalRegretSearch(AcquisitionFunction):
             f_mean, f_cov, self.n_gp_samples).T
 
         if self.point:
-            self.opt_ind = f_mean.argmax()
-            self.base_regrets  = f_samples.max(0) - f_samples[self.opt_ind, :]
+            opt_ind = f_mean.argmax()
+            self.base_regrets  = f_samples.max(0) - f_samples[opt_ind, :]
         else:
-            bincount = \
-                np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0])
-            self.p_max = bincount / float(self.n_gp_samples)
-
             self.base_regrets = f_samples.max(0) - f_samples
 
 

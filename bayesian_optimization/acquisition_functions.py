@@ -289,8 +289,8 @@ class EntropySearch(AcquisitionFunction):
             # Sample n_candidates data points, which are checked for
             # being the location of p_max
             self.X_candidate = \
-                np.empty((self.n_candidates * 5, boundaries.shape[0]))
-            for i in range(self.n_candidates * 5):
+                np.empty((self.n_candidates, boundaries.shape[0]))
+            for i in range(self.n_candidates):
                 # Select n_trial_points data points uniform randomly
                 candidates = np.random.uniform(
                     boundaries[:, 0], boundaries[:, 1],
@@ -302,9 +302,6 @@ class EntropySearch(AcquisitionFunction):
                     self.X_candidate[i] = candidates[np.argmax(y_samples)]
                 except np.linalg.LinAlgError:
                     self.X_candidate[i] = candidates[0]
-
-            self.X_candidate = \
-                KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
         else:
             self.n_candidates = self.X_candidate.shape[0]
 
@@ -414,8 +411,8 @@ class MinimalRegretSearch(AcquisitionFunction):
             # Sample n_candidates data points, which are checked for
             # being the location of p_max
             self.X_candidate = \
-                np.empty((self.n_candidates * 5, boundaries.shape[0]))
-            for i in range(self.n_candidates * 5):
+                np.empty((self.n_candidates, boundaries.shape[0]))
+            for i in range(self.n_candidates):
                 # Select n_trial_points data points uniform randomly
                 candidates = np.random.uniform(
                     boundaries[:, 0], boundaries[:, 1],
@@ -427,9 +424,6 @@ class MinimalRegretSearch(AcquisitionFunction):
                     self.X_candidate[i] = candidates[np.argmax(y_samples)]
                 except np.linalg.LinAlgError:
                     self.X_candidate[i] = candidates[0]
-
-            self.X_candidate = \
-                KMeans(n_clusters=self.n_candidates).fit(self.X_candidate).cluster_centers_
         else:
             self.n_candidates = self.X_candidate.shape[0]
 

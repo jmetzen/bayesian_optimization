@@ -24,7 +24,7 @@ def global_optimization(objective_function, boundaries, optimizer, maxf,
             raise Exception("'direct' optimizer requires the package nlopt."
                             "You may install it using "
                             "'sudo apt-get install python-nlopt'")
-
+        nlopt.srand(0)
         opt = nlopt.opt(nlopt.GN_DIRECT_L_RAND, boundaries.shape[0])
         opt.set_lower_bounds(boundaries[:, 0])
         opt.set_upper_bounds(boundaries[:, 1])

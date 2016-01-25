@@ -158,6 +158,48 @@ class UpperConfidenceBound(AcquisitionFunction):
         return ucb
 
 
+class GPUpperConfidenceBound(AcquisitionFunction):
+    """ The "GP Upper Confidence Bound" (UCB) acquisition function.
+
+    Parameters
+    ----------
+    model: gaussian-process object
+        Gaussian process model, which models the return landscape
+    """
+    def __init__(self, model, const):
+        self.model = model
+        self.const = const
+
+    def __call__(self, x, incumbent=0, *args, **kwargs):
+        """ Returns the upper confidence bound at query point x.
+
+        Parameters
+        ----------
+        x: array-like
+            The position at which the upper confidence bound will be evaluated.
+        incumbent: float
+            Baseline value, typically the maximum (actual) return observed
+            so far during learning. Defaults to 0.
+
+        Returns
+        -------
+        ucb: float
+            the upper confidence point of performance at query point x.
+        """
+        T = self.model.gp.X_train_.shape[0]
+        D = self.model.gp.X_train_.shape[1]
+
+        kappa = np.sqrt(4*(D + 1)*np.log(T) + self.const)
+
+        # Determine model's predictive distribution (mean and
+        # standard-deviation)
+        mu_x, sigma_x = self.model.predictive_distribution(np.atleast_2d(x))
+
+        ucb = (mu_x - incumbent) + kappa * sigma_x
+
+        return ucb
+
+
 class Greedy(UpperConfidenceBound):
     """ The greedy acquisition function
 

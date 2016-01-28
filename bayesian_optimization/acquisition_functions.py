@@ -252,12 +252,13 @@ class EntropySearch(AcquisitionFunction):
     the query point which minimizes the entropy of p_max is selected.
     """
     def __init__(self, model, n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=500):
+                 n_samples_y=10, n_trial_points=500, rng_seed=0):
         self.model = model
         self.n_candidates = n_candidates
         self.n_gp_samples = n_gp_samples
         self.n_samples_y =  n_samples_y
         self.n_trial_points = n_trial_points
+        self.rng_seed = rng_seed
 
         equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
         self.percent_points = norm.ppf(equidistant_grid)
@@ -298,7 +299,7 @@ class EntropySearch(AcquisitionFunction):
                                   f_cov_cross.T)
 
             # precompute samples for non-modified mean
-            f_samples = np.random.multivariate_normal(
+            f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
             # adapt for different means
@@ -351,8 +352,8 @@ class EntropySearch(AcquisitionFunction):
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
 
-        f_samples = np.random.multivariate_normal(f_mean, f_cov,
-                                                  self.n_gp_samples).T
+        f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
+            f_mean, f_cov, self.n_gp_samples).T
         p_max = np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0]) \
             / float(self.n_gp_samples)
         self.base_entropy = entropy(p_max)

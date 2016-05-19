@@ -244,12 +244,18 @@ class EntropySearch(AcquisitionFunction):
 
     This acquisition function samples at the position which reveals the maximal
     amount of information about the true position of the maximum. For this
-    *n_candidates* data points for the position of the true maximum (p_max) are
-    selected. From the GP model, *n_gp_samples* samples from the posterior are
+    *n_candidates* data points (representers) for the position of the true
+    maximum (p_max) are selected. 
+    From the GP model, *n_gp_samples* samples from the posterior are
     drawn and their entropy is computed. For each query point, the GP model is
     updated assuming *n_samples_y* outcomes (according to the current GP model).
     The change of entropy resulting from this assumed outcomes is computed and
     the query point which minimizes the entropy of p_max is selected.
+
+    See also:
+        Hennig, Philipp and Schuler, Christian J. 
+        Entropy Search for Information-Efficient Global Optimization. 
+        JMLR, 13:1809–1837, 2012.
     """
     def __init__(self, model, n_candidates=20, n_gp_samples=500,
                  n_samples_y=10, n_trial_points=500, rng_seed=0):
@@ -260,6 +266,8 @@ class EntropySearch(AcquisitionFunction):
         self.n_trial_points = n_trial_points
         self.rng_seed = rng_seed
 
+        # We use an equidistant grid instead of sampling from the 1d normal
+        # distribution over y
         equidistant_grid = np.linspace(0.0, 1.0, 2 * self.n_samples_y +1)[1::2]
         self.percent_points = norm.ppf(equidistant_grid)
 
@@ -269,7 +277,7 @@ class EntropySearch(AcquisitionFunction):
         Parameters
         ----------
         x: array-like
-            The position at which the upper confidence bound will be evaluated.
+            The position(s) at which the upper confidence bound will be evaluated.
         incumbent: float
             Baseline value, typically the maximum (actual) return observed
             so far during learning. Defaults to 0. [Not used by this acquisition
@@ -284,41 +292,56 @@ class EntropySearch(AcquisitionFunction):
 
         a_ES = np.empty((x.shape[0], self.n_samples_y))
 
+        # Evaluate mean and covariance of GP at all representer points and
+        # points x where MRS will be evaluated
         f_mean_all, f_cov_all = \
             self.model.gp.predict(np.vstack((self.X_candidate, x)),
                                   return_cov=True)
         f_mean = f_mean_all[:self.n_candidates]
         f_cov = f_cov_all[:self.n_candidates, :self.n_candidates]
 
-        # XXX: Vectorize
+        # Iterate over all x[i] at which we will evaluate the acquisition 
+        # function (often x.shape[0]=1)
         for i in range(self.n_candidates, self.n_candidates+x.shape[0]):
+            # Simulate change of covariance (f_cov_delta) for a sample at x[i], 
+            # which actually would not depend on the observed value y[i]
             f_cov_query = f_cov_all[[i]][:, [i]]
             f_cov_cross = f_cov_all[:self.n_candidates, [i]]
             f_cov_query_inv = np.linalg.inv(f_cov_query)
             f_cov_delta = -np.dot(np.dot(f_cov_cross, f_cov_query_inv),
                                   f_cov_cross.T)
 
-            # precompute samples for non-modified mean
+            # precompute samples from GP posterior for non-modified mean
             f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
-            # adapt for different means
-            for j in range(self.n_samples_y):  # sample outcomes
+            # adapt for different outcomes y_i[j] of the query at x[i]
+            for j in range(self.n_samples_y):  
+                # "sample" outcomes y_i[j] (more specifically where on the 
+                # Gaussian distribution over y_i[j] we would end up)
                 y_delta = np.sqrt(f_cov_query + self.model.gp.alpha)[:, 0] \
                     * self.percent_points[j]
+                # Compute change in GP mean at representer points
                 f_mean_delta = f_cov_cross.dot(f_cov_query_inv).dot(y_delta)
 
+                # Adapt samples to changes in GP posterior mean
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
+                # Count frequency of the candidates being the optima in the samples
                 p_max = np.bincount(np.argmax(f_samples_j, 0),
                                     minlength=f_mean.shape[0]) \
                     / float(self.n_gp_samples)
+                # Determing entropy of distr. p_max and compare to base entropy
                 a_ES[i - self.n_candidates, j] = \
                     self.base_entropy - entropy(p_max)
 
-        return a_ES.mean(1)
+         # Average entropy change over the different  assumed outcomes y_i[j]
+        return a_ES.mean(1) 
 
     def set_boundaries(self, boundaries, X_candidate=None):
         """Sets boundaries of search space.
+
+        This method is assumed to be called once before running the
+        optimization of the acquisition function.
 
         Parameters
         ----------
@@ -330,7 +353,8 @@ class EntropySearch(AcquisitionFunction):
         self.X_candidate = X_candidate
         if self.X_candidate is None:
             # Sample n_candidates data points, which are checked for
-            # being the location of p_max
+            # being selected as representer points using (discretized) Thompson
+            # sampling
             self.X_candidate = \
                 np.empty((self.n_candidates, boundaries.shape[0]))
             for i in range(self.n_candidates):
@@ -339,28 +363,48 @@ class EntropySearch(AcquisitionFunction):
                     boundaries[:, 0], boundaries[:, 1],
                     (self.n_trial_points, boundaries.shape[0]))
                 # Sample function from GP posterior and select the trial points
-                # which maximizes the posterior sample as candidate
+                # which maximizes the posterior sample as representer points 
                 try:
                     y_samples = self.model.gp.sample_y(candidates)
                     self.X_candidate[i] = candidates[np.argmax(y_samples)]
-                except np.linalg.LinAlgError:
+                except np.linalg.LinAlgError:  # This should happen very infrequently
                     self.X_candidate[i] = candidates[0]
         else:
             self.n_candidates = self.X_candidate.shape[0]
 
-        # determine base entropy
+        ### Determine base entropy
+        # Draw n_gp_samples functions from GP posterior
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
-
         f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
             f_mean, f_cov, self.n_gp_samples).T
+        # Count frequency of the candidates being the optima in the samples
         p_max = np.bincount(np.argmax(f_samples, 0), minlength=f_mean.shape[0]) \
             / float(self.n_gp_samples)
+        # Determing entropy of distr. p_max
         self.base_entropy = entropy(p_max)
 
 
 class MinimalRegretSearch(AcquisitionFunction):
-    """
+    """ Minimum regret search acquisition function
+
+    This acquisition function samples at the position which reduces the expected
+    simple regret of the recommended point (maximum of GP mean) the most.  For
+    this *n_candidates* data points (representers) for the position of  the true
+    maximum (p_max) are selected.  From the GP model, *n_gp_samples* samples
+    from the posterior are drawn and their expected simple regret is computed.
+    For each query point, the GP model is updated assuming *n_samples_y*
+    outcomes (according to the current GP model). The change of expected simple
+    regret resulting from this assumed outcomes is computed and the query point
+    which minimizes the expected simple regret is selected.
+
+    If *point* is True, MRS_point is used, which is faster but slightly less 
+    performant, while otherwise, the full MRS is used.
+
+    See also:
+        Metzen, Jan Hendrik
+        Minimum Regret Search for Single- and Multi-Task Optimization
+        ICML, 2016
     """
     def __init__(self, model, n_candidates=20, n_gp_samples=500,
                  n_samples_y=10, n_trial_points=500, point=False, rng_seed=0):
@@ -396,51 +440,81 @@ class MinimalRegretSearch(AcquisitionFunction):
 
         a_MRS = np.empty((x.shape[0], self.n_samples_y))
 
+        # Evaluate mean and covariance of GP at all representer points and
+        # points x where MRS will be evaluated
         f_mean_all, f_cov_all = \
             self.model.gp.predict(np.vstack((self.X_candidate, x)),
                                   return_cov=True)
         f_mean = f_mean_all[:self.n_candidates]
         f_cov = f_cov_all[:self.n_candidates, :self.n_candidates]
 
-        # XXX: Vectorize
+        # Iterate over all x[i] at which we will evaluate the acquisition 
+        # function (often x.shape[0]=1)
         for i in range(self.n_candidates, self.n_candidates+x.shape[0]):
+            # Simulate change of covariance (f_cov_delta) for a sample at x[i], 
+            # which actually would not depend on the observed value y_i
             f_cov_query = f_cov_all[[i]][:, [i]]
             f_cov_cross = f_cov_all[:self.n_candidates, [i]]
             f_cov_query_inv = np.linalg.inv(f_cov_query)
             f_cov_delta = -np.dot(np.dot(f_cov_cross, f_cov_query_inv),
                                   f_cov_cross.T)
 
-            # precompute samples for non-modified mean
+            # precompute samples from GP posterior for non-modified mean
             f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
                 f_mean, f_cov + f_cov_delta, self.n_gp_samples).T
 
-            # adapt for different means
-            for j in range(self.n_samples_y):  # sample outcomes
+            # adapt for different outcomes y_i[j] of the query at x[i]
+            for j in range(self.n_samples_y):
+                # "sample" outcomes y_i[j] (more specifically where on the 
+                # Gaussian distribution over y_i[j] we would end up)
                 y_delta = np.sqrt(f_cov_query + self.model.gp.alpha)[:, 0] \
                     * self.percent_points[j]
+                # Compute change in GP mean at representer points
                 f_mean_delta = f_cov_cross.dot(f_cov_query_inv).dot(y_delta)
 
+                # Adapt GP posterior mean and samples for modified mean
                 f_mean_j = f_mean + f_mean_delta
                 f_samples_j = f_samples + f_mean_delta[:, np.newaxis]
 
                 if self.point:
-                    opt_ind = f_mean_j.argmax()
+                    # MRS point:
+                    # Select representer point for the j-th assumed outcome 
+                    # y_i[j] as the maximum of the GP mean
+                    opt_ind = f_mean_j.argmax()  # selected representer point
+                    # Compute regret of selected representer point compared
+                    # to optimal representer point in the respective GP samples
                     regrets = f_samples_j.max(0) - f_samples_j[opt_ind, :]
+                    # Store mean of regret change (to base regret) 
+                    # over all GP samples as MRS_point
                     a_MRS[i - self.n_candidates, j] = \
                         np.mean(self.base_regrets - regrets)
                 else:
+                    # MRS:
+                    # Determine frequency of how often each representer point 
+                    # is the optimum in the GP samples
                     bincount = np.bincount(np.argmax(f_samples_j, 0),
                                            minlength=f_mean.shape[0])
                     p_max =  bincount / float(self.n_gp_samples)
-
+                    # Compute the incurred regrets for ALL representer points 
+                    # relative to the respective optima of the GP samples
                     regrets = f_samples_j.max(0) - f_samples_j
+                    # Compute mean of regret change (to base regret) 
+                    # over all GP samples
+                    mean_regrets = np.mean(self.base_regrets - regrets, 1)
+                    # Compute weighted mean over all representer points where
+                    # the probability of being the optimum (p_max) of a 
+                    # representer point is used as weight.
                     a_MRS[i - self.n_candidates, j] = \
-                        (np.mean(self.base_regrets - regrets, 1) * p_max).sum()
+                        (mean_regrets * p_max).sum()
 
-        return a_MRS.mean(1)  # Mean over y_delta
+        # Average MRS over the different assumed outcomes y_i[j]
+        return a_MRS.mean(1) 
 
     def set_boundaries(self, boundaries, X_candidate=None):
         """Sets boundaries of search space.
+
+        This method is assumed to be called once before running the
+        optimization of the acquisition function.
 
         Parameters
         ----------
@@ -452,7 +526,8 @@ class MinimalRegretSearch(AcquisitionFunction):
         self.X_candidate = X_candidate
         if self.X_candidate is None:
             # Sample n_candidates data points, which are checked for
-            # being the location of p_max
+            # being selected as representer points using (discretized) Thompson
+            # sampling
             self.X_candidate = \
                 np.empty((self.n_candidates, boundaries.shape[0]))
             for i in range(self.n_candidates):
@@ -461,120 +536,34 @@ class MinimalRegretSearch(AcquisitionFunction):
                     boundaries[:, 0], boundaries[:, 1],
                     (self.n_trial_points, boundaries.shape[0]))
                 # Sample function from GP posterior and select the trial points
-                # which maximizes the posterior sample as candidate
+                # which maximizes the posterior sample as representer points 
                 try:
                     y_samples = self.model.gp.sample_y(candidates)
                     self.X_candidate[i] = candidates[np.argmax(y_samples)]
-                except np.linalg.LinAlgError:
+                except np.linalg.LinAlgError:  # This should happen very infrequently
                     self.X_candidate[i] = candidates[0]
         else:
             self.n_candidates = self.X_candidate.shape[0]
 
-        # determine base regret
+        ### Determine base regret
+        # Draw n_gp_samples functions from GP posterior
         f_mean, f_cov = \
             self.model.gp.predict(self.X_candidate, return_cov=True)
         f_samples = np.random.RandomState(self.rng_seed).multivariate_normal(
             f_mean, f_cov, self.n_gp_samples).T
 
         if self.point:
-            opt_ind = f_mean.argmax()
+            # MRS point:
+            # Compute the incurred regret of the representer points that 
+            # maximizes the GP mean relative to the respective optima of
+            # the GP samples
+            opt_ind = f_mean.argmax()  # selected representer point
             self.base_regrets  = f_samples.max(0) - f_samples[opt_ind, :]
         else:
+            # MRS:
+            # Compute the incurred regrets for ALL representer points 
+            # relative to the respective optima of the GP samples
             self.base_regrets = f_samples.max(0) - f_samples
-
-
-class ContextualEntropySearchLocal(AcquisitionFunction):
-    def __init__(self, model, n_context_dims,
-                 n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=100):
-        self.model = model
-        self.n_context_dims = n_context_dims
-
-        self.n_candidates = n_candidates
-        self.n_gp_samples = n_gp_samples
-        self.n_samples_y =  n_samples_y
-        self.n_trial_points = n_trial_points
-
-    def __call__(self, x, incumbent=0, *args, **kwargs):
-        boundaries_i = np.copy(self.boundaries)
-        boundaries_i[:self.n_context_dims] = \
-            x[:self.n_context_dims, np.newaxis]
-        entropy_search_fixed_context = \
-            EntropySearch(self.model, self.n_candidates, self.n_gp_samples,
-                          self.n_samples_y, self.n_trial_points)
-        entropy_search_fixed_context.set_boundaries(boundaries_i)
-        return entropy_search_fixed_context(x)[0]
-
-    def set_boundaries(self, boundaries):
-        self.boundaries = boundaries
-
-
-class ContextualEntropySearch(AcquisitionFunction):
-    """
-    n_context_samples: int, default: 20
-        The number of context sampled from context space on which sample
-        policies are evaluated
-    """
-    def __init__(self, model, n_context_dims, n_context_samples,
-                 n_candidates=20, n_gp_samples=500,
-                 n_samples_y=10, n_trial_points=100, n_neighbors=20):
-        self.model = model
-        self.n_context_dims = n_context_dims
-        self.n_context_samples = n_context_samples
-
-        self.n_candidates = n_candidates
-        self.n_gp_samples = n_gp_samples
-        self.n_samples_y =  n_samples_y
-        self.n_trial_points = n_trial_points
-        self.n_neighbors = n_neighbors
-
-    def __call__(self, x, incumbent=0, *args, **kwargs):
-        ind = list(self.nbrs.kneighbors(x[np.newaxis, :self.n_context_dims],
-                                        return_distance=False)[0])
-
-        entropy_reductions = \
-            [self.entropy_search_ensemble[i](x)[0] for i in ind]
-
-        return np.mean(entropy_reductions)
-
-    def set_boundaries(self, boundaries):
-        self._sample_contexts(boundaries[:self.n_context_dims])
-
-        # XXX: do that lazily
-        self.entropy_search_ensemble = []
-        for i in range(self.n_context_samples):
-            boundaries_i = np.copy(boundaries)
-            boundaries_i[:self.n_context_dims] = \
-                self.context_samples[i][:, np.newaxis]
-            entropy_search_fixed_context = \
-                EntropySearch(self.model, self.n_candidates, self.n_gp_samples,
-                              self.n_samples_y, self.n_trial_points)
-            entropy_search_fixed_context.set_boundaries(boundaries_i)
-
-            self.entropy_search_ensemble.append(entropy_search_fixed_context)
-
-    def _sample_contexts(self, context_boundaries):
-        # Determine samples at which CES will be evaluated by
-        # 1. uniform random sampling
-        self.context_samples = \
-            np.random.uniform(context_boundaries[:, 0],
-                              context_boundaries[:, 1],
-                              (self.n_context_samples*25, self.n_context_dims))
-        # 2. subsampling via k-means clustering
-        kmeans = KMeans(n_clusters=self.n_context_samples, n_jobs=1)
-        self.context_samples = \
-            kmeans.fit(self.context_samples).cluster_centers_
-
-        # Initialize nearest neighbors query structure which takes GP
-        # length-scales into account
-        # XXX: Kernel structure is hard-coded
-        length_scales = \
-            self.model.gp.kernel_.k1.k2.length_scale[:self.n_context_dims]
-        self.nbrs = NearestNeighbors(
-            n_neighbors=self.n_neighbors,
-            algorithm='ball_tree', metric="mahalanobis",
-            metric_params={"VI": np.linalg.inv(np.diag(length_scales))})
-        self.nbrs.fit(self.context_samples)
 
 
 ACQUISITION_FUNCTIONS = {
@@ -584,9 +573,7 @@ ACQUISITION_FUNCTIONS = {
     "GREEDY": Greedy,
     "RANDOM": Random,
     "EntropySearch": EntropySearch,
-    "MinimalRegretSearch": MinimalRegretSearch,
-    "ContextualEntropySearch": ContextualEntropySearch,
-    "ContextualEntropySearchLocal": ContextualEntropySearchLocal}
+    "MinimalRegretSearch": MinimalRegretSearch}
 
 
 def create_acquisition_function(name, model, **kwargs):

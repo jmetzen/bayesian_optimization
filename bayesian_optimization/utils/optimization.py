@@ -1,4 +1,4 @@
-# Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
+# Author: Jan Hendrik Metzen <janmetzen@mailbox.org>
 
 import numpy as np
 from scipy.optimize import fmin_l_bfgs_b

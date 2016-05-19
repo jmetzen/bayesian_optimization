@@ -68,7 +68,7 @@ class KernelRegressionPolicy(UpperLevelPolicy):
     random_state : optional, int
         Seed for the random number generator.
 
-    :Author: Jan Hendrik Metzen (jhm@informatik.uni-bremen.de)
+    :Author: Jan Hendrik Metzen (janmetzen@mailbox.org)
     :Created: 2014/11/20
     """
 

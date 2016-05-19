@@ -1,5 +1,5 @@
 """ Acquisition functions which can be used in Bayesian optimization."""
-# Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
+# Author: Jan Hendrik Metzen <janmetzen@mailbox.org>
 
 import numpy as np
 from scipy.stats import norm, entropy

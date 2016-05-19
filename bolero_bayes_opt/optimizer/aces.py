@@ -1,4 +1,4 @@
-# Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
+# Author: Jan Hendrik Metzen <janmetzen@mailbox.org>
 # Date: 01/07/2015
 
 from copy import deepcopy

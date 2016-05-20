@@ -15,7 +15,8 @@ from bayesian_optimization import (BayesianOptimizer, GaussianProcessModel,
     UpperConfidenceBound)
 
 # Configure Bayesian optimizer
-kernel = C(1.0, (0.01, 1000.0)) * Matern(l=1.0, l_bounds=[(0.01, 100)])
+kernel = C(1.0, (0.01, 1000.0)) \
+	* Matern(length_scale=1.0, length_scale_bounds=[(0.01, 100)])
 model = GaussianProcessModel(kernel=kernel)
 kappa = 2.5
 acquisition_function = UpperConfidenceBound(model, kappa=kappa)

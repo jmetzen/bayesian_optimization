@@ -42,7 +42,7 @@ for it in range(n_repetitions):
         # Configuration
         if name == "rembo":
             kernel = C(1.0, (0.01, 1000.0)) \
-                * Matern(l=1.0, l_bounds=[(0.001, 100)])
+                * Matern(length_scale=1.0, length_scale_bounds=[(0.001, 100)])
             model = GaussianProcessModel(kernel=kernel)
             acquisition_function = UpperConfidenceBound(model, kappa=kappa)
             opt = REMBOOptimizer(
@@ -51,7 +51,7 @@ for it in range(n_repetitions):
                 random_state=it)
         elif name == "interleaved_rembo":
             kernel = C(1.0, (0.01, 1000.0)) \
-                * Matern(l=1.0, l_bounds=[(0.001, 100)])
+                * Matern(length_scale=1.0, length_scale_bounds=[(0.001, 100)])
             model = GaussianProcessModel(kernel=kernel)
             acquisition_function = UpperConfidenceBound(model, kappa=kappa)
             opt = InterleavedREMBOOptimizer(interleaved_runs=2,
@@ -60,7 +60,7 @@ for it in range(n_repetitions):
                 random_state=it)
         else:
             kernel = C(1.0, (0.01, 1000.0)) \
-                * Matern(l=[1.0] * n_dims, l_bounds=[(0.001, 100)] * n_dims)
+                * Matern(length_scale=[1.0] * n_dims, length_scale_bounds=[(0.001, 100)] * n_dims)
             model = GaussianProcessModel(kernel=kernel)
             acquisition_function = UpperConfidenceBound(model, kappa=kappa)
             opt = BayesianOptimizer(model=model,

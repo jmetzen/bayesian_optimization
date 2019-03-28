@@ -1,25 +1,26 @@
-Summary
-=======
+# Summary
+
 This repository contains some basic code for Bayesian optimization
 
-Installation
-============
 
-Install the current development version of scikit-learn (or sklearn version 0.18 once this is available)
+## Installation
 
-    git clone git@github.com:scikit-learn/scikit-learn.git
-    cd sklearn
-    sudo python setup.py install
+Install dependencies
+
+1. Install [nlopt](https://github.com/stevengj/nlopt) for your Python version.
+2. Install dependencies with pip: `[sudo] pip[3] install -r requirements.txt`
+   (requirements.txt can be found in the repository)
+3. (Optional:) install [BOLeRo](https://github.com/rock-learning/bolero)
 
 Install `bayesian_optimization`
 
-    git clone git@git.hb.dfki.de:jmetzen/bayesian_optimization.git
+    git clone https://github.com/rock-learning/bayesian_optimization.git
     cd bayesian_optimization
     sudo python setup.py install
 
 
-Usage
-=====
+## Usage
+
 Some usage examples are contained in the folder "examples". To reproduce the results from the ICML 2016 paper
 "Minimum Regret Search for Single- and Multi-Task Optimization", please execute the jupyter notebook "examples/mrs_evaluation.ipynb." 
 

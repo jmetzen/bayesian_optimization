@@ -5,9 +5,6 @@ import numpy as np
 from scipy.stats import norm, entropy
 from scipy.special import erf
 
-from sklearn.cluster import KMeans
-from sklearn.neighbors import NearestNeighbors
-
 
 class AcquisitionFunction(object):
     """ Abstract base class for acquisition functions."""

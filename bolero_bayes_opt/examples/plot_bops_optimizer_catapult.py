@@ -17,7 +17,7 @@ catapult.init()
 
 
 kernel = C(100.0, (1.0, 10000.0)) \
-    * Matern(l=(1.0, 1.0), l_bounds=[(0.1, 100), (0.1, 100)])
+    * Matern(length_scale=(1.0, 1.0), length_scale_bounds=[(0.1, 100), (0.1, 100)])
 
 opt = BOPSOptimizer(
     boundaries=[(5, 10), (0, np.pi/2)], bo_type="bo",

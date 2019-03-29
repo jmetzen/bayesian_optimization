@@ -84,7 +84,7 @@ class BOCPSOptimizer(ContextualOptimizer):
         self.boundaries = boundaries
         self.bo_type = bo_type
         self.value_transform = value_transform
-        if isinstance(self.value_transform, basestring):
+        if isinstance(self.value_transform, str):
             self.value_transform = eval(self.value_transform)
         self.optimizer = optimizer
 

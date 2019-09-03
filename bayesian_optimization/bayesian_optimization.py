@@ -333,7 +333,7 @@ class InterleavedREMBOOptimizer(BayesianOptimizer):
                                       *args, **kwargs)
                        for run in range(interleaved_runs)]
         self.rembos = cycle(self.rembos)
-        self.current_rembo = self.rembos.next()
+        self.current_rembo = next(self.rembos)
 
         self.X_ = []
         self.y_ = []
@@ -361,4 +361,4 @@ class InterleavedREMBOOptimizer(BayesianOptimizer):
         self.y_.append(y)
 
         self.current_rembo.update(X, y)
-        self.current_rembo = self.rembos.next()
+        self.current_rembo = next(self.rembos)

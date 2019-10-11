@@ -171,7 +171,7 @@ class BOCPSOptimizer(ContextualOptimizer):
             self.policy_fitted = False
 
     def best_policy(self, maxfun=15000, variance=0.01,
-                    training=["model-free", "model_based"]):
+                    training=["model-free", "model-based"]):
         """Returns the best (greedy) policy learned so far.
 
         Parameters

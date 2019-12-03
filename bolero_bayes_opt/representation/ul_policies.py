@@ -348,17 +348,20 @@ def model_based_policy_training_pretrained(
     else:
         scale_factor = 1  # Don't do scaling since the scales are unknown
 
-    # Refine policy determined in model-free way by performing L-BFGS on
-    # the model.
-    from bolero.optimizer.cmaes import fmin as fmin_cmaes
-    policy.W /= scale_factor
-    x_lbfgs, _ = \
-        fmin_cmaes(average_return, x0=policy.W.flatten(), maxfun=maxfun,
-                   eval_initial_x=True, variance=variance, maximize=True,
-                   *args, **kwargs)
+    try:
+        # Refine policy determined in model-free way by performing CMA-ES on
+        # the model.
+        from bolero.optimizer.cmaes import fmin as fmin_cmaes
+        policy.W /= scale_factor
+        W_cmaes, _ = \
+            fmin_cmaes(average_return, x0=policy.W.flatten(), maxfun=maxfun,
+                       eval_initial_x=True, variance=variance, maximize=True,
+                       *args, **kwargs)
 
-    # Set weights of linear policy
-    policy.W = x_lbfgs.reshape(policy.W.shape)
-    policy.W *= scale_factor
+        # Set weights of linear policy
+        policy.W = W_cmaes.reshape(policy.W.shape)
+        policy.W *= scale_factor
+    except AttributeError:
+        pass  # policy is not a linear model
 
     return policy

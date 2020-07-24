@@ -17,13 +17,13 @@ catapult.init()
 
 
 kernel = C(100.0, (1.0, 10000.0)) \
-    * Matern(l=(1.0, 1.0), l_bounds=[(0.1, 100), (0.1, 100)])
+    * Matern(length_scale=(1.0, 1.0), length_scale_bounds=[(0.1, 100), (0.1, 100)])
 
 opt = BOPSOptimizer(
     boundaries=[(5, 10), (0, np.pi/2)], bo_type="bo",
     acquisition_function="UCB", acq_fct_kwargs=dict(kappa=2.5),
     optimizer="direct+lbfgs", maxf=100,
-    gp_kwargs=dict(kernel=kernel, normalize_y=True, sigma_squared_n=1e-5))
+    gp_kwargs=dict(kernel=kernel, normalize_y=True, alpha=1e-5))
 
 
 target = 4.0  # Fixed target
@@ -42,7 +42,7 @@ for _ in range(10):
 
 # Determine reward landscape
 v = np.linspace(5.0, 10.0, 100)
-theta = np.linspace(0.0, np.pi/2, 100)
+theta = np.linspace(0.0, np.pi / 2, 100)
 V, Theta = np.meshgrid(v, theta)
 
 Z = np.array([[partial(catapult._compute_reward, context=context)

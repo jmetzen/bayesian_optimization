@@ -84,7 +84,7 @@ class BOCPSOptimizer(ContextualOptimizer):
         self.boundaries = boundaries
         self.bo_type = bo_type
         self.value_transform = value_transform
-        if isinstance(self.value_transform, basestring):
+        if isinstance(self.value_transform, str):
             self.value_transform = eval(self.value_transform)
         self.optimizer = optimizer
 
@@ -171,7 +171,7 @@ class BOCPSOptimizer(ContextualOptimizer):
             self.policy_fitted = False
 
     def best_policy(self, maxfun=15000, variance=0.01,
-                    training=["model-free", "model_based"]):
+                    training=["model-free", "model-based"]):
         """Returns the best (greedy) policy learned so far.
 
         Parameters
